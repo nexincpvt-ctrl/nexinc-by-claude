@@ -1,26 +1,46 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --brand-bg: #FBF4EC;
+  --brand-dark: #3A332C;
+  --brand-card: #FFFDFB;
+  --brand-primary: #E8794E;
+  --brand-secondary: #8FA888;
+  --brand-error: #D2665A;
+  --brand-success: #6FA37A;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+.dark {
+  --brand-bg: #1A1613;
+  --brand-dark: #F7EFE5;
+  --brand-card: #25201C;
+  --brand-primary: #EE8A63;
+  --brand-secondary: #A0B999;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+@theme {
+  --color-brand-bg: var(--brand-bg);
+  --color-brand-dark: var(--brand-dark);
+  --color-brand-card: var(--brand-card);
+  --color-brand-primary: var(--brand-primary);
+  --color-brand-secondary: var(--brand-secondary);
+  --color-brand-error: var(--brand-error);
+  --color-brand-success: var(--brand-success);
+
+  --font-quicksand: var(--font-quicksand);
+  --font-nunito: var(--font-nunito);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--color-brand-bg);
+  color: var(--color-brand-dark);
+  font-family: var(--font-nunito), system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-quicksand), system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-weight: 700;
 }
