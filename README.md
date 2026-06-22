@@ -123,3 +123,71 @@ To configure your database tables, security policies, and automatic profile crea
 - `proxy.js` — Intercepts requests to refresh access tokens and guard access to protected paths.
 - `supabase/` — Database migration resources:
   - `schema.sql` — Schema definition file.
+  - `add-vision-storage.sql` — Vision storage bucket setup SQL script.
+
+---
+
+## Storage Setup (Vision Support)
+
+To allow image uploads and enable vision chat capabilities:
+
+1. **Open the SQL Editor**:
+   - Go to your [Supabase Dashboard](https://supabase.com).
+   - Select your project.
+   - Click the **SQL Editor** icon in the left-hand sidebar.
+   
+2. **Run the Vision Storage Configuration**:
+   - Copy the contents of the file [supabase/add-vision-storage.sql](file:///d:/PROJECTS/CLAUDE/supabase/add-vision-storage.sql).
+   - Paste the SQL script into the SQL Editor and click **Run**.
+   
+3. **Verify Bucket Creation**:
+   - Navigate to **Storage** in the left-hand sidebar of your Supabase Dashboard.
+   - Confirm that a new bucket named **`chat-uploads`** now exists and is marked **Public**.
+
+---
+
+## Step 4 — Payments Setup (Stripe Checkout & Subscriptions)
+
+To enable subscription plans (Free vs Ultimate) and Stripe payment processing:
+
+1. **Stripe Account Setup**:
+   - Create a free developer account at [stripe.com](https://stripe.com) and keep your account in **Test Mode**.
+   - Create two recurring **Products** with monthly and yearly pricing in your Stripe Dashboard under Product Catalog.
+   - Copy the generated **Price IDs** (starting with `price_...`).
+   - Retrieve your **Publishable key** (`pk_test_...`) and **Secret key** (`sk_test_...`) from developers settings.
+
+2. **Configure Supabase Service Role Key**:
+   - Navigate to **Project Settings** > **API** in your Supabase Dashboard.
+   - Copy the **`service_role`** secret key (labeled *service_role* - this key bypasses all Row Level Security).
+   - > [!WARNING]
+     > The `SUPABASE_SERVICE_ROLE_KEY` is highly sensitive. It grants full admin access to your database. **NEVER** expose this key to client-side code, print it in logs, or commit it to Git.
+
+3. **Update Local Environment variables**:
+   - Open your `.env.local` file and paste the Stripe price IDs and secret keys:
+     ```env
+     STRIPE_SECRET_KEY=sk_test_your_secret_key
+     STRIPE_PUBLISHABLE_KEY=pk_test_your_publishable_key
+     STRIPE_PRICE_ID_MONTHLY=price_monthly_id
+     STRIPE_PRICE_ID_YEARLY=price_yearly_id
+     SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
+     ```
+
+4. **Database Billing Migration**:
+   - Run the migration SQL in [supabase/add-billing-fields.sql](file:///d:/PROJECTS/CLAUDE/supabase/add-billing-fields.sql) in your Supabase SQL Editor.
+   - This adds the `stripe_customer_id`, `stripe_subscription_id`, and `billing_cycle` fields to the `profiles` table.
+
+5. **Local Webhook Testing**:
+   - Download and install the [Stripe CLI](https://stripe.com/docs/stripe-cli).
+   - Authenticate the CLI:
+     ```bash
+     stripe login
+     ```
+   - Start forwarding webhooks to your local development server:
+     ```bash
+     stripe listen --forward-to localhost:3000/api/stripe/webhook
+     ```
+   - Copy the printed **Webhook Signing Secret** (starts with `whsec_...`) and paste it as `STRIPE_WEBHOOK_SECRET` in your `.env.local` file:
+     ```env
+     STRIPE_WEBHOOK_SECRET=whsec_your_webhook_secret
+     ```
+   - Keep the `stripe listen` terminal window running while testing local checkout events. Use Stripe's test credit card `4242 4242 4242 4242` to simulate successful subscription payments!

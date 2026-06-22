@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Fragment } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { useRouter } from "next/navigation";
 import {
   createChatSession,
   getChatSessions,
@@ -11,7 +12,7 @@ import {
   addMessage,
   updateProfilePlan,
 } from "@/lib/supabase/queries";
-import { getModelTags } from "@/lib/ai/modelTags";
+import { getModelTags, isVisionCapable } from "@/lib/ai/modelTags";
 
 // Resize and compress helper to avoid bloating Supabase DB and respect API payload limits
 const resizeImage = (file, maxWidth = 800, maxHeight = 800) => {
@@ -47,17 +48,41 @@ const resizeImage = (file, maxWidth = 800, maxHeight = 800) => {
     };
     reader.onerror = reject;
     reader.readAsDataURL(file);
+  });
 };
 
 // Static list of Ultimate Models
 const ultimateModels = [
-  { key: "gemini-2.5-pro", label: "Gemini 2.5 Pro", provider: "openrouter", providerModelId: "google/gemini-2.5-pro", tier: "ultimate" },
+  { key: "mistral-large", label: "Mistral Large (Mistral AI)", provider: "mistral", providerModelId: "mistral-large", tier: "ultimate" },
+  { key: "mistral-large-3", label: "Mistral Large 3 (Mistral AI)", provider: "mistral", providerModelId: "mistral-large-3", tier: "ultimate" },
+  { key: "mistral-medium-3.5", label: "Mistral Medium 3.5 (Mistral AI)", provider: "mistral", providerModelId: "mistral-medium-3.5", tier: "ultimate" },
+  { key: "mistral-small-4", label: "Mistral Small 4 (Mistral AI)", provider: "mistral", providerModelId: "mistral-small-4", tier: "ultimate" },
+  { key: "gpt-5.5", label: "GPT-5.5 (OpenAI)", provider: "openai", providerModelId: "gpt-5.5", tier: "ultimate" },
+  { key: "gpt-5.5-pro", label: "GPT-5.5 Pro (OpenAI)", provider: "openai", providerModelId: "gpt-5.5-pro", tier: "ultimate" },
+  { key: "gpt-5.4", label: "GPT-5.4 (OpenAI)", provider: "openai", providerModelId: "gpt-5.4", tier: "ultimate" },
+  { key: "gpt-5.4-pro", label: "GPT-5.4 Pro (OpenAI)", provider: "openai", providerModelId: "gpt-5.4-pro", tier: "ultimate" },
+  { key: "gpt-5.4-mini", label: "GPT-5.4 Mini (OpenAI)", provider: "openai", providerModelId: "gpt-5.4-mini", tier: "ultimate" },
+  { key: "gpt-5.4-nano", label: "GPT-5.4 Nano (OpenAI)", provider: "openai", providerModelId: "gpt-5.4-nano", tier: "ultimate" },
+  { key: "gemini-2.5-pro", label: "Gemini 2.5 Pro (Google)", provider: "gemini", providerModelId: "gemini-2.5-pro", tier: "ultimate" },
+  { key: "gemini-2.5-flash", label: "Gemini 2.5 Flash (Google)", provider: "gemini", providerModelId: "gemini-2.5-flash", tier: "ultimate" },
+  { key: "gemini-2.5-flash-lite", label: "Gemini 2.5 Flash Lite (Google)", provider: "gemini", providerModelId: "gemini-2.5-flash-lite", tier: "ultimate" },
+  { key: "gemini-3.5-flash", label: "Gemini 3.5 Flash (Google)", provider: "gemini", providerModelId: "gemini-3.5-flash", tier: "ultimate" },
+  { key: "gemini-3.1-flash-lite", label: "Gemini 3.1 Flash Lite (Google)", provider: "gemini", providerModelId: "gemini-3.1-flash-lite", tier: "ultimate" },
+  { key: "gemini-3.1-flash-live-preview", label: "Gemini 3.1 Flash Live Preview (Google)", provider: "gemini", providerModelId: "gemini-3.1-flash-live-preview", tier: "ultimate" },
+  { key: "gemini-live-2.5-flash-native-audio", label: "Gemini Live 2.5 Flash Native Audio (Google)", provider: "gemini", providerModelId: "gemini-live-2.5-flash-native-audio", tier: "ultimate" },
+  { key: "gemini-2.5-flash-tts", label: "Gemini 2.5 Flash TTS (Google)", provider: "gemini", providerModelId: "gemini-2.5-flash-tts", tier: "ultimate" },
+  { key: "gemini-2.5-pro-tts", label: "Gemini 2.5 Pro TTS (Google)", provider: "gemini", providerModelId: "gemini-2.5-pro-tts", tier: "ultimate" },
+  { key: "gpt-4o", label: "GPT-4o (OpenAI / ChatGPT)", provider: "openai", providerModelId: "gpt-4o", tier: "ultimate" },
+  { key: "claude-3.5-sonnet", label: "Claude 3.5 Sonnet (Anthropic)", provider: "anthropic", providerModelId: "claude-3-5-sonnet-latest", tier: "ultimate" },
+  { key: "perplexity-sonar", label: "Sonar Large (Perplexity)", provider: "perplexity", providerModelId: "sonar", tier: "ultimate" },
+  { key: "deepseek-r1", label: "DeepSeek R1 (DeepSeek)", provider: "deepseek", providerModelId: "deepseek-reasoner", tier: "ultimate" },
   { key: "custom-cloud-gpu", label: "Custom Cloud GPU Model", provider: "mock", providerModelId: "custom-cloud-gpu", tier: "ultimate" },
   { key: "my-local-model", label: "My Local Model", provider: "mock", providerModelId: "my-local-model", tier: "ultimate" },
 ];
 
 export default function DashboardClient({ initialProfile }) {
   const supabase = createClient();
+  const router = useRouter();
 
   // App States
   const [profile, setProfile] = useState(initialProfile);
@@ -69,8 +94,10 @@ export default function DashboardClient({ initialProfile }) {
   
   // Image Upload & Vision States
   const [selectedImage, setSelectedImage] = useState(null);
+  const [selectedImageFile, setSelectedImageFile] = useState(null);
   const [imageFileName, setImageFileName] = useState("");
   const fileInputRef = useRef(null);
+  const [isDragging, setIsDragging] = useState(false);
   
   // Model selector states
   const [freeModels, setFreeModels] = useState([]);
@@ -99,6 +126,8 @@ export default function DashboardClient({ initialProfile }) {
     learning: null,
     research: null,
     image: null,
+    video: null,
+    premium: null,
   });
 
   // Refs for closing dropdowns/menus on click-outside
@@ -173,13 +202,26 @@ export default function DashboardClient({ initialProfile }) {
     async function loadSessions() {
       setLoadingSessions(true);
       try {
-        const data = await getChatSessions(supabase, profile.id, activeTab);
-        setSessions(data);
+        const dbSection = (activeTab === "image" || activeTab === "video" || activeTab === "premium") ? "chat" : activeTab;
+        const data = await getChatSessions(supabase, profile.id, dbSection);
+        
+        let filteredData = data;
+        if (activeTab === "chat") {
+          filteredData = data.filter(s => !s.title.startsWith("🖼️ ") && !s.title.startsWith("🎬 ") && !s.title.startsWith("💎 "));
+        } else if (activeTab === "image") {
+          filteredData = data.filter(s => s.title.startsWith("🖼️ "));
+        } else if (activeTab === "video") {
+          filteredData = data.filter(s => s.title.startsWith("🎬 "));
+        } else if (activeTab === "premium") {
+          filteredData = data.filter(s => s.title.startsWith("💎 "));
+        }
+        
+        setSessions(filteredData);
 
         // Restore active session for this tab if one exists, otherwise set null
         const restoredSession = activeSessionBySection[activeTab];
         if (restoredSession) {
-          const exists = data.some((s) => s.id === restoredSession.id);
+          const exists = filteredData.some((s) => s.id === restoredSession.id);
           if (exists) {
             setActiveSession(restoredSession);
           } else {
@@ -228,18 +270,29 @@ export default function DashboardClient({ initialProfile }) {
 
   // Helper: Get active model per session (dynamic defaulting to section-appropriate model)
   const getActiveModel = () => {
-    const filteredFree = freeModels.filter(m => {
+    const modelsToSearch = activeTab === "premium" ? ultimateModels : freeModels;
+    const filtered = modelsToSearch.filter(m => {
       const tags = m.tags || getModelTags(m.providerModelId);
       return tags.includes(activeTab);
     });
-    const defaultModel = filteredFree[0] || freeModels[0] || { key: "loading", label: "Loading models...", tier: "free" };
-    if (!activeSession) return defaultModel;
-    const modelKey = sessionModels[activeSession.id];
-    if (modelKey) {
-      const match = combinedModels.find((m) => m.key === modelKey);
-      if (match) return match;
+    const defaultModel = filtered[0] || modelsToSearch[0] || freeModels[0] || { key: "loading", label: "Loading models...", tier: "free" };
+    
+    let result = defaultModel;
+    if (activeSession) {
+      const modelKey = sessionModels[activeSession.id];
+      if (modelKey) {
+        const match = combinedModels.find((m) => m.key === modelKey);
+        if (match) result = match;
+      }
     }
-    return defaultModel;
+
+    if (result && result.providerModelId) {
+      return {
+        ...result,
+        vision: result.vision ?? isVisionCapable(result.providerModelId)
+      };
+    }
+    return result;
   };
 
   // Helper: Format relative timestamp (e.g., "2h ago")
@@ -292,8 +345,13 @@ export default function DashboardClient({ initialProfile }) {
         ];
       case "image":
         return [
-          "Describe this image in vivid detail",
-          "Extract all readable text from this image",
+          "A cozy cabin in the woods, oil painting style",
+          "Cyberpunk city street at night, neon reflections",
+        ];
+      case "premium":
+        return [
+          "Analyze complex logs or codebases",
+          "Set up a custom cloud GPU configuration",
         ];
       case "chat":
       default:
@@ -307,7 +365,9 @@ export default function DashboardClient({ initialProfile }) {
   // Operations: Create Chat Session
   const handleCreateSession = async () => {
     try {
-      const newSession = await createChatSession(supabase, profile.id, activeTab);
+      const dbSection = (activeTab === "image" || activeTab === "video" || activeTab === "premium") ? "chat" : activeTab;
+      const dbTitle = activeTab === "image" ? "🖼️ New image chat" : activeTab === "video" ? "🎬 New video chat" : activeTab === "premium" ? "💎 New premium chat" : "New chat";
+      const newSession = await createChatSession(supabase, profile.id, dbSection, dbTitle);
       setSessions((prev) => [newSession, ...prev]);
       setActiveSession(newSession);
       setMobileSidebarOpen(false);
@@ -320,17 +380,20 @@ export default function DashboardClient({ initialProfile }) {
   // Operations: Create Chat Session and Send Prompt Immediately
   const handleCreateSessionWithPrompt = async (promptText) => {
     try {
-      const newSession = await createChatSession(supabase, profile.id, activeTab);
+      const dbSection = (activeTab === "image" || activeTab === "video" || activeTab === "premium") ? "chat" : activeTab;
+      const dbTitle = activeTab === "image" ? "🖼️ New image chat" : activeTab === "video" ? "🎬 New video chat" : activeTab === "premium" ? "💎 New premium chat" : "New chat";
+      const newSession = await createChatSession(supabase, profile.id, dbSection, dbTitle);
       setSessions((prev) => [newSession, ...prev]);
       setActiveSession(newSession);
       setMobileSidebarOpen(false);
 
       // Optimistic message timeline
-      const filteredFree = freeModels.filter(m => {
+      const modelsToSearch = activeTab === "premium" ? ultimateModels : freeModels;
+      const filtered = modelsToSearch.filter(m => {
         const tags = m.tags || getModelTags(m.providerModelId);
         return tags.includes(activeTab);
       });
-      const currentModelKey = filteredFree[0]?.key || freeModels[0]?.key || "groq-llama-3.3-70b-versatile";
+      const currentModelKey = filtered[0]?.key || modelsToSearch[0]?.key || freeModels[0]?.key || "groq-llama-3.3-70b-versatile";
       const tempUserMsg = {
         id: "temp-user-" + Date.now(),
         session_id: newSession.id,
@@ -422,7 +485,15 @@ export default function DashboardClient({ initialProfile }) {
       return;
     }
     try {
-      const updated = await renameChatSession(supabase, sessionId, newTitle.trim());
+      let formattedTitle = newTitle.trim();
+      if (activeTab === "image" && !formattedTitle.startsWith("🖼️ ")) {
+        formattedTitle = "🖼️ " + formattedTitle;
+      } else if (activeTab === "video" && !formattedTitle.startsWith("🎬 ")) {
+        formattedTitle = "🎬 " + formattedTitle;
+      } else if (activeTab === "premium" && !formattedTitle.startsWith("💎 ")) {
+        formattedTitle = "💎 " + formattedTitle;
+      }
+      const updated = await renameChatSession(supabase, sessionId, formattedTitle);
       setSessions((prev) => prev.map((s) => (s.id === sessionId ? updated : s)));
       if (activeSession && activeSession.id === sessionId) {
         setActiveSession(updated);
@@ -447,9 +518,46 @@ export default function DashboardClient({ initialProfile }) {
       showToast("Processing image...");
       const compressedBase64 = await resizeImage(file, 800, 800);
       setSelectedImage(compressedBase64);
+      setSelectedImageFile(file);
       setImageFileName(file.name);
     } catch (err) {
       console.error("Error processing image:", err);
+      showToast("Failed to process image.");
+    }
+  };
+
+  // Handle dragging elements over the chat window
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    if (!currentModel.vision || !activeSession) return;
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = () => {
+    setIsDragging(false);
+  };
+
+  const handleDrop = async (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (!currentModel.vision || !activeSession) return;
+
+    const file = e.dataTransfer.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      showToast("Please upload an image file.");
+      return;
+    }
+
+    try {
+      showToast("Processing image...");
+      const compressedBase64 = await resizeImage(file, 800, 800);
+      setSelectedImage(compressedBase64);
+      setSelectedImageFile(file);
+      setImageFileName(file.name);
+    } catch (err) {
+      console.error("Error processing dropped image:", err);
       showToast("Failed to process image.");
     }
   };
@@ -463,24 +571,23 @@ export default function DashboardClient({ initialProfile }) {
     setInputText("");
 
     const stagedImage = selectedImage;
+    const stagedImageFile = selectedImageFile;
     setSelectedImage(null);
+    setSelectedImageFile(null);
     setImageFileName("");
     if (fileInputRef.current) fileInputRef.current.value = "";
 
     const activeModel = getActiveModel();
-    const isMultimodal = !!stagedImage;
 
-    const rawContent = isMultimodal
-      ? JSON.stringify({ type: "multimodal", image: stagedImage, text: messageText })
-      : messageText;
-
-    // 1. Optimistic User Message
+    // 1. Optimistic User Message (displays base64 thumbnail preview immediately)
     const tempUserMsg = {
       id: "temp-user-" + Date.now(),
       session_id: activeSession.id,
       user_id: profile.id,
       role: "user",
-      content: rawContent,
+      content: messageText,
+      message_type: stagedImage ? "image" : undefined,
+      image_url: stagedImage ? stagedImage : undefined,
       created_at: new Date().toISOString(),
     };
 
@@ -497,13 +604,48 @@ export default function DashboardClient({ initialProfile }) {
       return [...updated].sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
     });
 
+    // Upload to Supabase Storage if an image is attached
+    let imagePublicUrl = "";
+    if (stagedImageFile) {
+      try {
+        const cleanFileName = imageFileName.replace(/[^a-zA-Z0-9.-]/g, "_");
+        const storagePath = `${profile.id}/${activeSession.id}/${Date.now()}-${cleanFileName}`;
+        
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from("chat-uploads")
+          .upload(storagePath, stagedImageFile);
+
+        if (uploadError) {
+          throw uploadError;
+        }
+
+        const { data: urlData } = supabase.storage
+          .from("chat-uploads")
+          .getPublicUrl(storagePath);
+          
+        imagePublicUrl = urlData.publicUrl;
+      } catch (err) {
+        console.error("Storage upload error:", err);
+        showToast("Failed to upload image. Please try again.");
+        // Restore staged states
+        setSelectedImage(stagedImage);
+        setSelectedImageFile(stagedImageFile);
+        setImageFileName(imageFileName);
+        // Remove optimistic message
+        setMessages((prev) => prev.filter((m) => m.id !== tempUserMsg.id));
+        return;
+      }
+    }
+
     try {
       // 2. Save User Message
       const savedUserMsg = await addMessage(supabase, {
         sessionId: activeSession.id,
         userId: profile.id,
         role: "user",
-        content: rawContent,
+        content: messageText,
+        message_type: stagedImage ? "image" : undefined,
+        image_url: stagedImage ? imagePublicUrl : undefined,
       });
 
       // Replace user message state with saved one
@@ -531,7 +673,7 @@ export default function DashboardClient({ initialProfile }) {
         body: JSON.stringify({
           sessionId: activeSession.id,
           messageText: messageText,
-          image: stagedImage,
+          imageUrl: stagedImage ? imagePublicUrl : undefined,
           model: activeModel.key,
         }),
       });
@@ -566,7 +708,20 @@ export default function DashboardClient({ initialProfile }) {
   // Operations: Model selection gating
   const handleSelectModel = (model) => {
     if (model.tier === "ultimate" && profile.plan !== "ultimate") {
-      showToast("This model is part of the Ultimate plan ✨ Upgrade to unlock it.");
+      showToast(
+        <span className="flex items-center gap-2">
+          This premium model is locked.
+          <button
+            onClick={() => {
+              router.push("/pricing");
+              setToast((prev) => ({ ...prev, visible: false }));
+            }}
+            className="underline text-brand-primary cursor-pointer hover:text-brand-primary/85 font-black ml-1"
+          >
+            Upgrade here →
+          </button>
+        </span>
+      );
       return;
     }
 
@@ -608,7 +763,7 @@ export default function DashboardClient({ initialProfile }) {
   const sidebarContent = (
     <div className="flex flex-col h-full overflow-hidden">
       {/* "+ New chat" Button */}
-      {activeTab !== "video" && (
+      {activeTab !== "video" && !(activeTab === "premium" && profile.plan !== "ultimate") && (
         <div className="p-4 flex-shrink-0">
           <button
             onClick={handleCreateSession}
@@ -627,6 +782,10 @@ export default function DashboardClient({ initialProfile }) {
         {activeTab === "video" ? (
           <div className="text-center py-8 px-4 text-brand-dark/40 dark:text-brand-dark/50 text-sm font-light leading-relaxed select-none">
             🎬 Video features are currently in development.
+          </div>
+        ) : activeTab === "premium" && profile.plan !== "ultimate" ? (
+          <div className="text-center py-8 px-4 text-brand-dark/45 dark:text-brand-dark/60 text-sm font-light leading-relaxed select-none">
+            🔒 Premium tab is locked.<br />Upgrade to the Ultimate plan to unlock these models.
           </div>
         ) : loadingSessions ? (
           <div className="space-y-2 p-2">
@@ -703,31 +862,49 @@ export default function DashboardClient({ initialProfile }) {
 
                       {/* Rename / Delete Dropdown menu */}
                       {openMenuSessionId === session.id && (
-                        <div
-                          ref={menuRef}
-                          className="absolute right-0 top-7 w-32 bg-brand-card border border-brand-dark/10 dark:border-brand-dark/25 rounded-2xl shadow-xl py-1.5 z-30 animate-in fade-in slide-in-from-top-1 duration-150"
-                        >
-                          <button
+                        <>
+                          {/* Invisible backdrop to close the menu and prevent click-through conflicts */}
+                          <div
+                            className="fixed inset-0 z-20 cursor-default"
                             onClick={(e) => {
                               e.stopPropagation();
-                              setRenamingSessionId(session.id);
-                              setRenameValue(session.title);
+                              e.preventDefault();
                               setOpenMenuSessionId(null);
                             }}
-                            className="w-full text-left px-3.5 py-2 text-xs font-semibold text-brand-dark hover:bg-brand-dark/5 dark:hover:bg-brand-dark/10 flex items-center gap-2 cursor-pointer transition-colors"
-                          >
-                            ✏️ Rename
-                          </button>
-                          <button
-                            onClick={(e) => {
+                            onMouseDown={(e) => {
                               e.stopPropagation();
-                              handleDeleteSession(session.id);
+                              e.preventDefault();
+                              setOpenMenuSessionId(null);
                             }}
-                            className="w-full text-left px-3.5 py-2 text-xs font-semibold text-brand-error hover:bg-brand-error/5 dark:hover:bg-brand-error/10 flex items-center gap-2 cursor-pointer transition-colors"
+                          />
+                          <div
+                            ref={menuRef}
+                            onClick={(e) => e.stopPropagation()}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            className="absolute right-0 top-7 w-32 bg-brand-card border border-brand-dark/10 dark:border-brand-dark/25 rounded-2xl shadow-xl py-1.5 z-30 animate-in fade-in slide-in-from-top-1 duration-150"
                           >
-                            🗑️ Delete
-                          </button>
-                        </div>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setRenamingSessionId(session.id);
+                                setRenameValue(session.title);
+                                setOpenMenuSessionId(null);
+                              }}
+                              className="w-full text-left px-3.5 py-2 text-xs font-semibold text-brand-dark hover:bg-brand-dark/5 dark:hover:bg-brand-dark/10 flex items-center gap-2 cursor-pointer transition-colors"
+                            >
+                              ✏️ Rename
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteSession(session.id);
+                              }}
+                              className="w-full text-left px-3.5 py-2 text-xs font-semibold text-brand-error hover:bg-brand-error/5 dark:hover:bg-brand-error/10 flex items-center gap-2 cursor-pointer transition-colors"
+                            >
+                              🗑️ Delete
+                            </button>
+                          </div>
+                        </>
                       )}
                     </div>
                   </div>
@@ -749,15 +926,15 @@ export default function DashboardClient({ initialProfile }) {
               {profile.name}
             </span>
             <button
-              onClick={toggleMockUpgrade}
-              title={profile.plan === "free" ? "Click to simulate upgrading to Ultimate plan!" : "Click to simulate downgrading to Free plan!"}
+              onClick={() => router.push("/pricing")}
+              title={profile.plan === "ultimate" ? "View pricing plans / Manage subscription" : "Upgrade to Ultimate plan"}
               className={`inline-flex items-center gap-0.5 text-[9px] uppercase font-extrabold tracking-wider px-2 py-0.5 rounded-full cursor-pointer hover:scale-105 active:scale-95 transition-all duration-150 ${
                 profile.plan === "ultimate"
                   ? "bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-200 dark:border-amber-900/30"
-                  : "bg-brand-dark/10 text-brand-dark/60 dark:bg-brand-dark/20 dark:text-brand-dark/80"
+                  : "bg-brand-primary/15 text-brand-primary dark:bg-brand-primary/25 border border-brand-primary/20 dark:border-brand-primary/45"
               }`}
             >
-              {profile.plan === "ultimate" ? "✨ Ultimate" : "Free"}
+              {profile.plan === "ultimate" ? "✨ Ultimate" : "Upgrade"}
             </button>
           </div>
         </div>
@@ -778,12 +955,16 @@ export default function DashboardClient({ initialProfile }) {
   const filteredFreeModels = freeModels.filter(m => {
     const tags = m.tags || getModelTags(m.providerModelId);
     return tags.includes(activeTab);
-  });
-
-  const filteredUltimateModels = ultimateModels.map(m => ({
+  }).map(m => ({
     ...m,
-    tags: getModelTags(m.providerModelId)
-  })).filter(m => m.tags.includes(activeTab));
+    vision: m.vision ?? isVisionCapable(m.providerModelId)
+  }));
+
+  const filteredUltimateModels = activeTab === "premium" ? ultimateModels.map(m => ({
+    ...m,
+    tags: getModelTags(m.providerModelId),
+    vision: isVisionCapable(m.providerModelId)
+  })).filter(m => m.tags.includes(activeTab)) : [];
 
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-brand-bg text-brand-dark relative">
@@ -823,7 +1004,7 @@ export default function DashboardClient({ initialProfile }) {
         {/* Categories Tab Selectors */}
         <div className="flex-1 flex justify-center max-w-2xl px-4 overflow-x-auto scrollbar-none">
           <nav className="flex space-x-1.5 p-1 bg-brand-bg/60 dark:bg-brand-bg/40 rounded-full border border-brand-dark/5 whitespace-nowrap">
-            {["chat", "code", "learning", "research", "image", "video"].map((tab) => (
+            {["chat", "code", "learning", "research", "image", "video", "premium"].map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
@@ -883,7 +1064,23 @@ export default function DashboardClient({ initialProfile }) {
         </aside>
 
         {/* Main Conversation Window */}
-        <main className="flex-1 flex flex-col overflow-hidden bg-brand-bg/30 relative">
+        <main
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          className="flex-1 flex flex-col overflow-hidden bg-brand-bg/30 relative"
+        >
+          {isDragging && (
+            <div className="absolute inset-0 bg-brand-primary/10 dark:bg-brand-primary/20 backdrop-blur-[2px] z-40 flex flex-col items-center justify-center border-4 border-dashed border-brand-primary m-4 rounded-3xl pointer-events-none transition-all duration-200 animate-in fade-in zoom-in-95">
+              <div className="bg-brand-card dark:bg-brand-card/95 p-6 rounded-2xl shadow-xl flex flex-col items-center gap-3 border border-brand-primary/20 max-w-sm text-center">
+                <div className="w-12 h-12 rounded-full bg-brand-primary/15 text-brand-primary flex items-center justify-center text-2xl">
+                  📸
+                </div>
+                <p className="text-sm font-extrabold text-brand-dark font-quicksand">Drop image to attach to message</p>
+                <p className="text-xs text-brand-dark/50 dark:text-brand-dark/70 font-light">Supports JPG, PNG, WEBP, and GIF</p>
+              </div>
+            </div>
+          )}
           {activeTab === "video" ? (
             /* Video Tab Coming Soon Placeholder Splash Screen */
             <div className="flex-1 flex flex-col items-center justify-center p-6 text-center max-w-2xl mx-auto my-auto animate-in fade-in duration-500 select-none">
@@ -896,6 +1093,25 @@ export default function DashboardClient({ initialProfile }) {
               <p className="text-brand-dark/70 dark:text-brand-dark/80 leading-relaxed max-w-md font-light text-sm">
                 This will be part of the Ultimate plan once we wire up a video provider.
               </p>
+            </div>
+          ) : activeTab === "premium" && profile.plan !== "ultimate" ? (
+            /* Premium Tab Lock Overlay Screen */
+            <div className="flex-1 flex flex-col items-center justify-center p-6 text-center max-w-2xl mx-auto my-auto animate-in fade-in duration-500 select-none">
+              <div className="w-20 h-20 bg-brand-primary/10 rounded-3xl flex items-center justify-center mb-6 text-brand-primary text-4xl shadow-md shadow-brand-primary/5">
+                🔒
+              </div>
+              <h2 className="text-3xl font-extrabold font-quicksand text-brand-dark mb-4">
+                Unlock Premium Intelligence
+              </h2>
+              <p className="text-brand-dark/70 dark:text-brand-dark/80 leading-relaxed max-w-md font-light text-sm mb-8">
+                To access Gemini 2.5 Pro, local models, and custom cloud GPUs, please upgrade to the Ultimate Plan.
+              </p>
+              <button
+                onClick={() => router.push("/pricing")}
+                className="px-8 py-3.5 bg-brand-primary hover:bg-brand-primary/95 text-white font-bold rounded-full shadow-md shadow-brand-primary/20 hover:scale-[1.02] active:scale-95 transition-all duration-150 cursor-pointer"
+              >
+                View Plans & Upgrade
+              </button>
             </div>
           ) : !activeSession ? (
             /* Empty Chat State Welcome Screen */
@@ -911,6 +1127,8 @@ export default function DashboardClient({ initialProfile }) {
                   ? "🔍"
                   : activeTab === "image"
                   ? "🎨"
+                  : activeTab === "premium"
+                  ? "👑"
                   : "🎬"}
               </div>
 
@@ -925,6 +1143,8 @@ export default function DashboardClient({ initialProfile }) {
                   ? "Research Partner"
                   : activeTab === "image"
                   ? "Image Generator"
+                  : activeTab === "premium"
+                  ? "Premium Intelligence"
                   : "Video Generator"}
               </h2>
 
@@ -939,6 +1159,8 @@ export default function DashboardClient({ initialProfile }) {
                   ? "Gather information, structure your research, outline documents, or analyze ideas efficiently."
                   : activeTab === "image"
                   ? "Generate beautiful artwork, illustrations, and realistic images from text prompts."
+                  : activeTab === "premium"
+                  ? "Chat with our most advanced and custom AI models. Unlocked for Ultimate subscribers."
                   : "Create cinematic clips and animations dynamically from text prompts."}
               </p>
 
@@ -989,20 +1211,21 @@ export default function DashboardClient({ initialProfile }) {
                   messages.map((msg) => {
                     const isUser = msg.role === "user";
                     
-                    // Parse potential multimodal content
-                    let isMultimodal = false;
+                    // Identify if message is an image upload
+                    let isImageUpload = msg.message_type === "image";
+                    let imageUrl = msg.image_url || "";
                     let displayContent = msg.content;
-                    let imageUrl = "";
-                    
-                    try {
-                      const parsed = JSON.parse(msg.content);
-                      if (parsed && parsed.type === "multimodal") {
-                        isMultimodal = true;
-                        imageUrl = parsed.image;
-                        displayContent = parsed.text;
-                      }
-                    } catch (e) {
-                      // Normal text message
+
+                    // Fallback to parse older format or inline JSON
+                    if (!isImageUpload && msg.content) {
+                      try {
+                        const parsed = JSON.parse(msg.content);
+                        if (parsed && (parsed.type === "multimodal" || parsed.message_type === "image")) {
+                          isImageUpload = true;
+                          imageUrl = parsed.image || parsed.image_url;
+                          displayContent = parsed.text || parsed.content;
+                        }
+                      } catch (e) {}
                     }
 
                     return (
@@ -1020,13 +1243,13 @@ export default function DashboardClient({ initialProfile }) {
                               : "bg-brand-card text-brand-dark border border-brand-dark/5 rounded-tl-none"
                           }`}
                         >
-                          {isMultimodal && imageUrl && (
-                            <div className="mb-2 max-w-full rounded-2xl overflow-hidden border border-brand-dark/5 dark:border-brand-dark/20 bg-brand-bg/50">
+                          {isImageUpload && imageUrl && (
+                            <div className="mb-2 max-w-[80vw] sm:max-w-[300px] rounded-2xl overflow-hidden border border-brand-dark/5 dark:border-brand-dark/20 bg-brand-bg/50">
                               {/* eslint-disable-next-line @next/next/no-img-element */}
                               <img
                                 src={imageUrl}
                                 alt="Uploaded attachment"
-                                className="max-h-64 object-contain rounded-2xl select-none"
+                                className="w-full object-contain rounded-2xl select-none"
                               />
                             </div>
                           )}
@@ -1092,92 +1315,52 @@ export default function DashboardClient({ initialProfile }) {
                           </div>
                         ) : (
                           <>
-                            {/* Groq Models */}
-                            {filteredFreeModels.filter(m => m.provider === "groq").length > 0 && (
-                              <>
-                                <div className="px-3 py-1 text-[10px] uppercase font-bold tracking-wider text-brand-dark/45 dark:text-brand-dark/60 border-b border-brand-dark/5 pb-1">
-                                  Groq
-                                </div>
-                                <div className="py-1">
-                                  {filteredFreeModels.filter(m => m.provider === "groq").map((m) => {
-                                    const isSelected = currentModel.key === m.key;
-                                    return (
-                                      <button
-                                        key={m.key}
-                                        type="button"
-                                        onClick={() => handleSelectModel(m)}
-                                        className={`w-full text-left px-4 py-2.5 text-xs font-semibold transition-colors flex items-center justify-between cursor-pointer ${
-                                          isSelected
-                                            ? "bg-brand-primary/10 text-brand-primary"
-                                            : "text-brand-dark hover:bg-brand-dark/5 dark:hover:bg-brand-dark/10"
-                                        }`}
-                                      >
-                                        <span>{m.label}</span>
-                                        {isSelected && <span className="text-brand-primary font-bold">✓</span>}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              </>
-                            )}
+                            {/* Curated Free Model Categories */}
+                            {["Strongest Reasoning", "Best Coding", "Fastest", "Free Models Worth Trying", "Mistral Free Models"].map((cat) => {
+                              const catModels = filteredFreeModels.filter(m => m.category === cat);
+                              if (catModels.length === 0) return null;
+                              
+                              // Category Icons
+                              const catIcons = {
+                                "Strongest Reasoning": "🧠",
+                                "Best Coding": "💻",
+                                "Fastest": "⚡",
+                                "Free Models Worth Trying": "🌟",
+                                "Mistral Free Models": "🌀"
+                              };
+                              const displayTitle = `${catIcons[cat] || "✨"} ${cat}`;
 
-                            {/* OpenRouter Models */}
-                            {filteredFreeModels.filter(m => m.provider === "openrouter").length > 0 && (
-                              <>
-                                <div className="px-3 py-1.5 text-[10px] uppercase font-bold tracking-wider text-brand-dark/45 dark:text-brand-dark/60 border-t border-b border-brand-dark/5 pt-2 pb-1">
-                                  OpenRouter
-                                </div>
-                                <div className="py-1">
-                                  {filteredFreeModels.filter(m => m.provider === "openrouter").map((m) => {
-                                    const isSelected = currentModel.key === m.key;
-                                    return (
-                                      <button
-                                        key={m.key}
-                                        type="button"
-                                        onClick={() => handleSelectModel(m)}
-                                        className={`w-full text-left px-4 py-2.5 text-xs font-semibold transition-colors flex items-center justify-between cursor-pointer ${
-                                          isSelected
-                                            ? "bg-brand-primary/10 text-brand-primary"
-                                            : "text-brand-dark hover:bg-brand-dark/5 dark:hover:bg-brand-dark/10"
-                                        }`}
-                                      >
-                                        <span>{m.label}</span>
-                                        {isSelected && <span className="text-brand-primary font-bold">✓</span>}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              </>
-                            )}
-
-                            {/* NVIDIA Models */}
-                            {filteredFreeModels.filter(m => m.provider === "nvidia").length > 0 && (
-                              <>
-                                <div className="px-3 py-1.5 text-[10px] uppercase font-bold tracking-wider text-brand-dark/45 dark:text-brand-dark/60 border-t border-b border-brand-dark/5 pt-2 pb-1">
-                                  NVIDIA
-                                </div>
-                                <div className="py-1">
-                                  {filteredFreeModels.filter(m => m.provider === "nvidia").map((m) => {
-                                    const isSelected = currentModel.key === m.key;
-                                    return (
-                                      <button
-                                        key={m.key}
-                                        type="button"
-                                        onClick={() => handleSelectModel(m)}
-                                        className={`w-full text-left px-4 py-2.5 text-xs font-semibold transition-colors flex items-center justify-between cursor-pointer ${
-                                          isSelected
-                                            ? "bg-brand-primary/10 text-brand-primary"
-                                            : "text-brand-dark hover:bg-brand-dark/5 dark:hover:bg-brand-dark/10"
-                                        }`}
-                                      >
-                                        <span>{m.label}</span>
-                                        {isSelected && <span className="text-brand-primary font-bold">✓</span>}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              </>
-                            )}
+                              return (
+                                <Fragment key={cat}>
+                                  <div className="px-3 py-1.5 text-[10px] uppercase font-bold tracking-wider text-brand-dark/45 dark:text-brand-dark/60 border-t border-b border-brand-dark/5 pt-2 pb-1 first-of-type:border-t-0 first-of-type:pt-1">
+                                    {displayTitle}
+                                  </div>
+                                  <div className="py-1">
+                                    {catModels.map((m) => {
+                                      const isSelected = currentModel.key === m.key;
+                                      return (
+                                        <button
+                                          key={m.key}
+                                          type="button"
+                                          onClick={() => handleSelectModel(m)}
+                                          className={`w-full text-left px-4 py-2.5 text-xs font-semibold transition-colors flex items-center justify-between cursor-pointer ${
+                                            isSelected
+                                              ? "bg-brand-primary/10 text-brand-primary"
+                                              : "text-brand-dark hover:bg-brand-dark/5 dark:hover:bg-brand-dark/10"
+                                          }`}
+                                        >
+                                          <span className="flex items-center gap-1.5 min-w-0">
+                                            <span className="truncate">{m.label}</span>
+                                            {m.vision && <span className="text-[10px] flex-shrink-0" title="Vision capable">📷</span>}
+                                          </span>
+                                          {isSelected && <span className="text-brand-primary font-bold">✓</span>}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </Fragment>
+                              );
+                            })}
 
                             {/* Fallback empty message for filtered free models */}
                             {filteredFreeModels.length === 0 && (
@@ -1209,13 +1392,21 @@ export default function DashboardClient({ initialProfile }) {
                                             : "text-brand-dark hover:bg-brand-dark/5 dark:hover:bg-brand-dark/10"
                                         }`}
                                       >
-                                        <div className="flex items-center gap-1">
-                                          <span>👑 {m.label}</span>
+                                        <div className="flex items-center gap-1 min-w-0">
+                                          <span className="truncate">👑 {m.label}</span>
+                                          {m.vision && <span className="text-[10px] flex-shrink-0" title="Vision capable">📷</span>}
                                         </div>
                                         <div className="flex items-center gap-1.5">
                                           {profile.plan !== "ultimate" && (
-                                            <span className="text-[10px] text-brand-dark/40" title="Locked">
-                                              🔒
+                                            <span 
+                                              className="text-[10px] text-brand-primary font-bold hover:underline cursor-pointer flex items-center gap-0.5" 
+                                              title="Click to upgrade"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                router.push("/pricing");
+                                              }}
+                                            >
+                                              🔒 Upgrade
                                             </span>
                                           )}
                                           {isSelected && <span className="text-brand-primary font-bold">✓</span>}
@@ -1232,8 +1423,60 @@ export default function DashboardClient({ initialProfile }) {
                     )}
                   </div>
 
+                  {/* Image attachment preview bar */}
+                  {selectedImage && (
+                    <div className="flex items-center gap-3 p-3 mb-2 rounded-2xl bg-brand-bg/40 dark:bg-brand-bg/25 border border-brand-dark/5 dark:border-brand-dark/20 animate-in slide-in-from-bottom-2 duration-150 max-w-sm">
+                      <div className="relative w-14 h-14 rounded-xl overflow-hidden border border-brand-dark/10">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={selectedImage} alt="Upload preview" className="w-full h-full object-cover" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold text-brand-dark truncate">{imageFileName || "Staged Image"}</p>
+                        <p className="text-[10px] text-brand-dark/40">Ready to upload</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedImage(null);
+                          setImageFileName("");
+                          if (fileInputRef.current) fileInputRef.current.value = "";
+                        }}
+                        className="p-1.5 hover:bg-brand-dark/5 dark:hover:bg-brand-dark/10 rounded-full text-brand-dark/50 hover:text-brand-dark transition-colors cursor-pointer"
+                        aria-label="Remove image"
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  )}
+
                   {/* Input form */}
                   <form onSubmit={handleSendMessage} className="flex gap-2 items-center">
+                    {/* Hidden file input */}
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={handleFileChange}
+                      accept="image/*"
+                      className="hidden"
+                      disabled={loadingModels || !activeSession}
+                    />
+
+                    {/* Image Attach Button */}
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={loadingModels || !activeSession || !currentModel?.vision}
+                      className="w-12 h-12 border border-brand-dark/10 dark:border-brand-dark/20 bg-brand-card hover:bg-brand-bg/50 dark:hover:bg-brand-bg/35 rounded-full flex items-center justify-center text-brand-dark/65 hover:text-brand-dark transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0 cursor-pointer"
+                      title={!currentModel?.vision ? "Switch to a vision-capable model (look for the camera icon) to attach images" : "Attach an image"}
+                      aria-label="Attach an image"
+                    >
+                      <svg className="w-5.5 h-5.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636L12 12m4.727-4.727A6 6 0 117.773 16.23l6.001-6.001a3 3 0 114.242 4.242l-5.303 5.303" />
+                      </svg>
+                    </button>
+
                     <input
                       type="text"
                       value={inputText}
@@ -1250,7 +1493,7 @@ export default function DashboardClient({ initialProfile }) {
                     />
                     <button
                       type="submit"
-                      disabled={loadingModels || !inputText.trim()}
+                      disabled={loadingModels || (!inputText.trim() && !selectedImage)}
                       className="w-12 h-12 bg-brand-primary text-white rounded-full flex items-center justify-center shadow-md shadow-brand-primary/20 hover:bg-brand-primary/95 transition-all duration-150 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed disabled:scale-100 flex-shrink-0 cursor-pointer"
                       aria-label="Send message"
                     >

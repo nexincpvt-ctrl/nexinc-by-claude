@@ -13,6 +13,7 @@ create table public.profiles (
   avatar_url text,
   plan text not null default 'free',
   plan_renews_at timestamptz,
+  referral_code text,
   created_at timestamptz default now(),
   
   -- Ensure plan is either 'free' or 'ultimate'
@@ -25,10 +26,28 @@ create table public.profiles (
 -- Automatically copy user details from the private auth.users table
 -- to our public.profiles table upon registration.
 
+create or replace function public.generate_random_code()
+returns text as $$
+declare
+  chars text := 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  result text := '';
+  i integer;
+begin
+  for i in 1..10 loop
+    result := result || substr(chars, floor(random() * length(chars) + 1)::integer, 1);
+  end loop;
+  return result;
+end;
+$$ language plpgsql;
+
 create or replace function public.handle_new_user()
 returns trigger as $$
+declare
+  ref_code text;
 begin
-  insert into public.profiles (id, name, email, avatar_url, plan)
+  ref_code := public.generate_random_code();
+
+  insert into public.profiles (id, name, email, avatar_url, plan, referral_code)
   values (
     new.id,
     -- Try getting the full_name, fall back to email name prefix if missing
@@ -39,7 +58,8 @@ begin
     ),
     new.email,
     coalesce(new.raw_user_meta_data->>'avatar_url', ''),
-    'free'
+    'free',
+    ref_code
   );
   return new;
 end;
