@@ -3,9 +3,37 @@ import { createClient } from "@/lib/supabase/server";
 import { getMessages } from "@/lib/supabase/queries";
 import { NVIDIA_FREE_MODELS } from "@/lib/ai/nvidiaModels";
 
+// Helper to parse potential multimodal JSON content into OpenAI standard payload format
+function parseMultimodalContent(content) {
+  try {
+    const parsed = JSON.parse(content);
+    if (parsed && parsed.type === "multimodal") {
+      return [
+        { type: "text", text: parsed.text },
+        { type: "image_url", image_url: { url: parsed.image } }
+      ];
+    }
+  } catch (e) {
+    // Not JSON, treat as plain text
+  }
+  return content;
+}
+
+// Helper to check if database message content matches client prompt text
+function messageContentTextMatches(dbContent, promptText) {
+  if (dbContent === promptText) return true;
+  try {
+    const parsed = JSON.parse(dbContent);
+    if (parsed && parsed.type === "multimodal" && parsed.text === promptText) {
+      return true;
+    }
+  } catch (e) {}
+  return false;
+}
+
 export async function POST(req) {
   try {
-    const { sessionId, messageText, messages: clientMessages, model } = await req.json();
+    const { sessionId, messageText, messages: clientMessages, model, image } = await req.json();
 
     if (!model) {
       return NextResponse.json(
@@ -72,14 +100,24 @@ export async function POST(req) {
         const dbMessages = await getMessages(supabase, sessionId);
         messages = dbMessages.map((m) => ({
           role: m.role,
-          content: m.content,
+          content: parseMultimodalContent(m.content),
         }));
 
         // Append latest user message if not already included in fetched history (fixes race conditions)
         if (messageText) {
-          const lastMsg = messages[messages.length - 1];
-          if (!lastMsg || lastMsg.role !== "user" || lastMsg.content !== messageText) {
-            messages.push({ role: "user", content: messageText });
+          const lastMsg = dbMessages[dbMessages.length - 1];
+          if (!lastMsg || lastMsg.role !== "user" || !messageContentTextMatches(lastMsg.content, messageText)) {
+            if (image) {
+              messages.push({
+                role: "user",
+                content: [
+                  { type: "text", text: messageText },
+                  { type: "image_url", image_url: { url: image } }
+                ]
+              });
+            } else {
+              messages.push({ role: "user", content: messageText });
+            }
           }
         }
       } catch (err) {
@@ -88,19 +126,29 @@ export async function POST(req) {
         if (clientMessages && Array.isArray(clientMessages)) {
           messages = clientMessages.map((m) => ({
             role: m.role,
-            content: m.content,
+            content: parseMultimodalContent(m.content),
           }));
         }
       }
     } else if (clientMessages && Array.isArray(clientMessages)) {
       messages = clientMessages.map((m) => ({
         role: m.role,
-        content: m.content,
+        content: parseMultimodalContent(m.content),
       }));
     }
 
     if (messages.length === 0 && messageText) {
-      messages.push({ role: "user", content: messageText });
+      if (image) {
+        messages.push({
+          role: "user",
+          content: [
+            { type: "text", text: messageText },
+            { type: "image_url", image_url: { url: image } }
+          ]
+        });
+      } else {
+        messages.push({ role: "user", content: messageText });
+      }
     }
 
     // Add temporary console log to verify messages array structure in the server terminal

@@ -62,8 +62,7 @@ create table public.chat_sessions (
   created_at timestamptz default now(),
   updated_at timestamptz default now(),
 
-  -- Restrict sections to specific application pages
-  constraint check_section check (section in ('chat', 'code', 'learning', 'research'))
+  constraint check_section check (section in ('chat', 'code', 'learning', 'research', 'image', 'video'))
 );
 
 -- ------------------------------------------

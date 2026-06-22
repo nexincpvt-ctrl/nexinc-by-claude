@@ -13,6 +13,42 @@ import {
 } from "@/lib/supabase/queries";
 import { getModelTags } from "@/lib/ai/modelTags";
 
+// Resize and compress helper to avoid bloating Supabase DB and respect API payload limits
+const resizeImage = (file, maxWidth = 800, maxHeight = 800) => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > maxWidth) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          }
+        } else {
+          if (height > maxHeight) {
+            width = Math.round((width * maxHeight) / height);
+            height = maxHeight;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", 0.7)); // 70% quality compression
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+};
+
 // Static list of Ultimate Models
 const ultimateModels = [
   { key: "gemini-2.5-pro", label: "Gemini 2.5 Pro", provider: "openrouter", providerModelId: "google/gemini-2.5-pro", tier: "ultimate" },
@@ -30,6 +66,11 @@ export default function DashboardClient({ initialProfile }) {
   const [activeSession, setActiveSession] = useState(null);
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState("");
+  
+  // Image Upload & Vision States
+  const [selectedImage, setSelectedImage] = useState(null);
+  const [imageFileName, setImageFileName] = useState("");
+  const fileInputRef = useRef(null);
   
   // Model selector states
   const [freeModels, setFreeModels] = useState([]);
@@ -251,8 +292,8 @@ export default function DashboardClient({ initialProfile }) {
         ];
       case "image":
         return [
-          "A cozy cabin in the woods, oil painting style",
-          "Cyberpunk city street at night, neon reflections",
+          "Describe this image in vivid detail",
+          "Extract all readable text from this image",
         ];
       case "chat":
       default:
@@ -392,16 +433,46 @@ export default function DashboardClient({ initialProfile }) {
       showToast("Failed to update chat title.");
     }
   };
+  // Handle file input changes and compress the image
+  const handleFileChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      showToast("Please upload an image file.");
+      return;
+    }
+
+    try {
+      showToast("Processing image...");
+      const compressedBase64 = await resizeImage(file, 800, 800);
+      setSelectedImage(compressedBase64);
+      setImageFileName(file.name);
+    } catch (err) {
+      console.error("Error processing image:", err);
+      showToast("Failed to process image.");
+    }
+  };
 
   // Operations: Send Message (Optimistic timeline updates)
   const handleSendMessage = async (e) => {
     e.preventDefault();
-    if (!inputText.trim() || !activeSession) return;
+    if ((!inputText.trim() && !selectedImage) || !activeSession) return;
 
-    const messageText = inputText.trim();
+    const messageText = inputText.trim() || (selectedImage ? "Describe this image" : "");
     setInputText("");
 
+    const stagedImage = selectedImage;
+    setSelectedImage(null);
+    setImageFileName("");
+    if (fileInputRef.current) fileInputRef.current.value = "";
+
     const activeModel = getActiveModel();
+    const isMultimodal = !!stagedImage;
+
+    const rawContent = isMultimodal
+      ? JSON.stringify({ type: "multimodal", image: stagedImage, text: messageText })
+      : messageText;
 
     // 1. Optimistic User Message
     const tempUserMsg = {
@@ -409,15 +480,9 @@ export default function DashboardClient({ initialProfile }) {
       session_id: activeSession.id,
       user_id: profile.id,
       role: "user",
-      content: messageText,
+      content: rawContent,
       created_at: new Date().toISOString(),
     };
-
-    // Calculate current message list including the optimistic user message
-    const updatedMessagesForApi = [
-      ...messages.map((m) => ({ role: m.role, content: m.content })),
-      { role: "user", content: messageText },
-    ];
 
     setMessages((prev) => [...prev, tempUserMsg]);
 
@@ -438,7 +503,7 @@ export default function DashboardClient({ initialProfile }) {
         sessionId: activeSession.id,
         userId: profile.id,
         role: "user",
-        content: messageText,
+        content: rawContent,
       });
 
       // Replace user message state with saved one
@@ -466,6 +531,7 @@ export default function DashboardClient({ initialProfile }) {
         body: JSON.stringify({
           sessionId: activeSession.id,
           messageText: messageText,
+          image: stagedImage,
           model: activeModel.key,
         }),
       });
@@ -922,6 +988,23 @@ export default function DashboardClient({ initialProfile }) {
                 ) : (
                   messages.map((msg) => {
                     const isUser = msg.role === "user";
+                    
+                    // Parse potential multimodal content
+                    let isMultimodal = false;
+                    let displayContent = msg.content;
+                    let imageUrl = "";
+                    
+                    try {
+                      const parsed = JSON.parse(msg.content);
+                      if (parsed && parsed.type === "multimodal") {
+                        isMultimodal = true;
+                        imageUrl = parsed.image;
+                        displayContent = parsed.text;
+                      }
+                    } catch (e) {
+                      // Normal text message
+                    }
+
                     return (
                       <div
                         key={msg.id}
@@ -931,13 +1014,25 @@ export default function DashboardClient({ initialProfile }) {
                       >
                         {/* Bubble content */}
                         <div
-                          className={`px-4.5 py-3 rounded-3xl leading-relaxed text-sm whitespace-pre-wrap select-text shadow-xs ${
+                          className={`px-4.5 py-3 rounded-3xl leading-relaxed text-sm select-text shadow-xs ${
                             isUser
                               ? "bg-brand-primary text-white rounded-tr-none shadow-brand-primary/10"
                               : "bg-brand-card text-brand-dark border border-brand-dark/5 rounded-tl-none"
                           }`}
                         >
-                          {msg.content}
+                          {isMultimodal && imageUrl && (
+                            <div className="mb-2 max-w-full rounded-2xl overflow-hidden border border-brand-dark/5 dark:border-brand-dark/20 bg-brand-bg/50">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={imageUrl}
+                                alt="Uploaded attachment"
+                                className="max-h-64 object-contain rounded-2xl select-none"
+                              />
+                            </div>
+                          )}
+                          {displayContent && (
+                            <div className="whitespace-pre-wrap">{displayContent}</div>
+                          )}
                         </div>
 
                         {/* Bubble metadata details */}
