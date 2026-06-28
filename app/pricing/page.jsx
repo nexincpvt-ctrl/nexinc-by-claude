@@ -1,14 +1,16 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { getProfile } from "@/lib/supabase/queries";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import "../landing.css";
 
 export default function PricingPage() {
   const supabase = createClient();
   const router = useRouter();
+  const particleCanvasRef = useRef(null);
 
   // Profile and Loading States
   const [profile, setProfile] = useState(null);
@@ -50,6 +52,116 @@ export default function PricingPage() {
       }
     }
     loadUser();
+  }, []);
+
+  useEffect(() => {
+    // Interactive mouse glow particles
+    const canvas = particleCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    let W = (canvas.width = window.innerWidth);
+    let H = (canvas.height = window.innerHeight);
+
+    let particles = [];
+    const T = "94,224,168"; // Soft mint green
+
+    const initParticles = () => {
+      particles = [];
+      const N = Math.floor((W * H) / 22000);
+      for (let i = 0; i < N; i++) {
+        particles.push({
+          x: Math.random() * W,
+          y: Math.random() * H,
+          vx: (Math.random() - 0.5) * 0.25,
+          vy: (Math.random() - 0.5) * 0.25,
+          r: Math.random() * 1.2 + 0.4,
+          a: Math.random() * 0.5 + 0.15,
+        });
+      }
+    };
+
+    initParticles();
+
+    const handleResize = () => {
+      if (canvas) {
+        W = canvas.width = window.innerWidth;
+        H = canvas.height = window.innerHeight;
+        initParticles();
+      }
+    };
+    window.addEventListener("resize", handleResize);
+
+    let mx = W / 2;
+    let my = H / 2;
+    const handleMouseMove = (e) => {
+      mx = e.clientX;
+      my = e.clientY;
+    };
+    document.addEventListener("mousemove", handleMouseMove);
+
+    let animId;
+
+    const drawParticles = () => {
+      ctx.clearRect(0, 0, W, H);
+
+      // Mouse glow
+      const gr = ctx.createRadialGradient(mx, my, 0, mx, my, 280);
+      gr.addColorStop(0, `rgba(${T},0.06)`);
+      gr.addColorStop(1, "transparent");
+      ctx.fillStyle = gr;
+      ctx.fillRect(0, 0, W, H);
+
+      particles.forEach((p, i) => {
+        p.x += p.vx;
+        p.y += p.vy;
+        if (p.x < 0) p.x = W;
+        if (p.x > W) p.x = 0;
+        if (p.y < 0) p.y = H;
+        if (p.y > H) p.y = 0;
+
+        const dx = p.x - mx;
+        const dy = p.y - my;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 100 && dist > 0) {
+          const f = (((100 - dist) / 100) * 0.35);
+          p.vx += (dx / dist) * f;
+          p.vy += (dy / dist) * f;
+        }
+        const spd = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
+        if (spd > 1.0) {
+          p.vx /= spd;
+          p.vy /= spd;
+        }
+
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(${T},${p.a})`;
+        ctx.fill();
+
+        for (let j = i + 1; j < particles.length; j++) {
+          const q = particles[j];
+          const d2 = (p.x - q.x) ** 2 + (p.y - q.y) ** 2;
+          if (d2 < 12000) {
+            ctx.beginPath();
+            ctx.moveTo(p.x, p.y);
+            ctx.lineTo(q.x, q.y);
+            ctx.strokeStyle = `rgba(${T},${(1 - d2 / 12000) * 0.12})`;
+            ctx.lineWidth = 0.5;
+            ctx.stroke();
+          }
+        }
+      });
+
+      animId = requestAnimationFrame(drawParticles);
+    };
+
+    drawParticles();
+
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      document.removeEventListener("mousemove", handleMouseMove);
+      cancelAnimationFrame(animId);
+    };
   }, []);
 
   const handleUpgrade = async () => {
@@ -110,7 +222,9 @@ export default function PricingPage() {
     if (validCodes.includes(code)) {
       try {
         setCheckingOut(true);
-        const { data: { user } } = await supabase.auth.getUser();
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
         if (!user) {
           router.push("/login?redirect=/pricing");
           return;
@@ -121,7 +235,10 @@ export default function PricingPage() {
           .update({
             plan: "ultimate",
             billing_cycle: billingCycle,
-            plan_renews_at: new Date(Date.now() + (billingCycle === "yearly" ? 365 : 30) * 24 * 60 * 60 * 1000).toISOString(),
+            plan_renews_at: new Date(
+              Date.now() +
+                (billingCycle === "yearly" ? 365 : 30) * 24 * 60 * 60 * 1000
+            ).toISOString(),
           })
           .eq("id", user.id)
           .select()
@@ -131,7 +248,9 @@ export default function PricingPage() {
 
         setProfile(data);
         setPromoSuccess(true);
-        setPromoMessage(`🎉 Code '${code}' redeemed successfully! Ultimate plan unlocked.`);
+        setPromoMessage(
+          `🎉 Code '${code}' redeemed successfully! Ultimate plan unlocked.`
+        );
         setPromoCode("");
         setIsModalOpen(false);
       } catch (err) {
@@ -150,7 +269,9 @@ export default function PricingPage() {
   const handleReferralUpgrade = async (type, keyInput) => {
     try {
       setCheckingOut(true);
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       if (!user) {
         router.push("/login?redirect=/pricing");
         return;
@@ -164,12 +285,11 @@ export default function PricingPage() {
           setCheckingOut(false);
           return;
         }
-        
+
         const validDevKeys = ["NEXINC_DEV", "DEVKEY", "NEXINC_DEV_2026"];
         let isValid = validDevKeys.includes(key);
 
         if (!isValid) {
-          // Look up if the code exists in any profile's referral_code column
           const { data: matchedProfile, error: matchError } = await supabase
             .from("profiles")
             .select("id")
@@ -191,14 +311,19 @@ export default function PricingPage() {
 
       const days = type === "developer" ? 365 : 90;
       const cycle = type === "developer" ? "yearly" : "monthly";
-      const label = type === "developer" ? "Developer Referral (1 Year free)" : "Beta Tester Referral (3 Months free)";
+      const label =
+        type === "developer"
+          ? "Developer Referral (1 Year free)"
+          : "Beta Tester Referral (3 Months free)";
 
       const { data, error } = await supabase
         .from("profiles")
         .update({
           plan: "ultimate",
           billing_cycle: cycle,
-          plan_renews_at: new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString(),
+          plan_renews_at: new Date(
+            Date.now() + days * 24 * 60 * 60 * 1000
+          ).toISOString(),
         })
         .eq("id", user.id)
         .select()
@@ -208,7 +333,9 @@ export default function PricingPage() {
 
       setProfile(data);
       setPromoSuccess(true);
-      setPromoMessage(`✨ Referral claimed! Ultimate plan activated via ${label}.`);
+      setPromoMessage(
+        `✨ Referral claimed! Ultimate plan activated via ${label}.`
+      );
       setIsModalOpen(false);
       setDevKeyInput("");
       setModalDevKey("");
@@ -226,8 +353,28 @@ export default function PricingPage() {
     setOpenFaqIndex(openFaqIndex === index ? null : index);
   };
 
+  // Card Spotlight Mouse Hover
+  const cardRefs = useRef({});
+  const handleMouseMove = (e, key) => {
+    const card = cardRefs.current[key];
+    if (!card) return;
+    const rect = card.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * 100;
+    const y = ((e.clientY - rect.top) / rect.height) * 100;
+    card.style.background = `radial-gradient(circle at ${x}% ${y}%, rgba(94,224,168,0.06) 0%, var(--card2) 60%)`;
+  };
+
+  const handleMouseLeave = (key) => {
+    const card = cardRefs.current[key];
+    if (!card) return;
+    card.style.background = "";
+  };
+
   const monthlyPrice = 15;
   const yearlyPrice = 12; // 20% discount
+
+  const devMonthlyPrice = 49;
+  const devYearlyPrice = 39; // 20% discount
 
   const faqs = [
     {
@@ -249,264 +396,478 @@ export default function PricingPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-brand-bg text-brand-dark flex flex-col py-12 px-4 sm:px-6 lg:px-8 font-sans transition-colors duration-300">
-      {/* Header and Back navigation */}
-      <div className="max-w-4xl w-full mx-auto mb-10 flex items-center justify-between">
-        <Link
-          href="/dashboard"
-          className="inline-flex items-center gap-2 text-xs font-extrabold text-brand-primary hover:text-brand-primary/85 transition-colors uppercase tracking-wider font-quicksand bg-brand-card/75 dark:bg-brand-card/55 border border-brand-dark/5 dark:border-brand-dark/15 px-4 py-2.5 rounded-full shadow-sm hover:scale-[1.02] active:scale-95 duration-150 cursor-pointer"
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
-          </svg>
-          Back to Dashboard
-        </Link>
-        <span className="text-xs font-bold text-brand-dark/45">NexInc Premium Billing</span>
+    <div className="landing-body" style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
+      {/* Background Elements */}
+      <div id="video-bg" style={{ background: "var(--dark)" }}>
+        <div id="video-overlay"></div>
       </div>
+      <canvas ref={particleCanvasRef} id="bg-canvas"></canvas>
+
+      {/* Nav */}
+      <nav>
+        <Link href="/" className="logo">
+          <div className="logo-icon">
+            <span></span>
+          </div>
+          NEXINC
+        </Link>
+        <ul className="nav-links">
+          <li>
+            <Link href="/models">Models</Link>
+          </li>
+          <li>
+            <Link href="/#features">Features</Link>
+          </li>
+          <li>
+            <Link href="/#terminal">Terminal</Link>
+          </li>
+          <li>
+            <Link href="/pricing" style={{ color: "var(--teal)" }}>Pricing</Link>
+          </li>
+        </ul>
+        <div style={{ display: "flex", alignItems: "center", gap: "24px" }}>
+          <div className="nav-status">
+            <div className="status-dot"></div>
+            US-EAST-1A · 99.98% UPTIME
+          </div>
+          <Link href="/login" className="nav-cta">
+            Sign in
+          </Link>
+        </div>
+      </nav>
+
+      {/* Pricing Header */}
+      <section className="section-pad" style={{ paddingBottom: "20px", paddingTop: "140px", zIndex: 10 }}>
+        <div style={{ maxWidth: "800px", margin: "0 auto", textAlign: "center" }}>
+          <div className="section-label">// membership pricing</div>
+          <h1 className="section-title" style={{ fontSize: "clamp(36px, 5vw, 68px)", marginBottom: "20px" }}>
+            Unleash the full core
+          </h1>
+          <p className="section-sub" style={{ margin: "0 auto 40px", maxWidth: "600px" }}>
+            Switch between plans anytime. Explore premium reasoning minds, spin up custom remote GPUs, and unlock maximum context depth.
+          </p>
+
+          {/* Monthly / Yearly Switcher */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "12px", margin: "0 auto 40px" }}>
+            <span style={{ fontSize: "12px", fontFamily: "var(--mono)", color: billingCycle === "monthly" ? "var(--text)" : "var(--muted)" }}>
+              Monthly
+            </span>
+            <button
+              onClick={() => setBillingCycle(billingCycle === "monthly" ? "yearly" : "monthly")}
+              style={{
+                width: "48px",
+                height: "24px",
+                borderRadius: "12px",
+                background: "var(--card)",
+                border: "1px solid var(--border)",
+                position: "relative",
+                cursor: "pointer",
+                padding: "2px",
+                display: "flex",
+                alignItems: "center"
+              }}
+            >
+              <div
+                style={{
+                  width: "18px",
+                  height: "18px",
+                  borderRadius: "50%",
+                  background: "var(--teal)",
+                  transform: billingCycle === "yearly" ? "translateX(24px)" : "translateX(0)",
+                  transition: "transform 0.2s ease"
+                }}
+              ></div>
+            </button>
+            <span style={{ fontSize: "12px", fontFamily: "var(--mono)", color: billingCycle === "yearly" ? "var(--text)" : "var(--muted)", display: "flex", alignItems: "center", gap: "6px" }}>
+              Yearly <span style={{ fontSize: "10px", padding: "1px 6px", background: "rgba(94,224,168,0.1)", border: "1px solid var(--teal)", color: "var(--teal)" }}>Save 20%</span>
+            </span>
+          </div>
+        </div>
+      </section>
 
       {/* Main Container */}
-      <div className="max-w-4xl w-full mx-auto flex-1 flex flex-col items-center">
-        {/* Title */}
-        <div className="text-center max-w-xl mb-12">
-          <h1 className="text-4xl sm:text-5xl font-black font-quicksand tracking-tight mb-4">
-            Unleash the full power of NexInc
-          </h1>
-          <p className="text-brand-dark/70 dark:text-brand-dark/80 font-light text-sm sm:text-base leading-relaxed">
-            Switch between plans anytime. Explore premium minds, connect local intelligence, and accelerate your productivity.
-          </p>
-        </div>
-
-        {/* Monthly / Yearly Toggle */}
-        <div className="flex items-center gap-3 mb-14 bg-brand-card/80 dark:bg-brand-card/50 border border-brand-dark/5 dark:border-brand-dark/20 p-1.5 rounded-full relative shadow-sm select-none">
-          <button
-            onClick={() => setBillingCycle("monthly")}
-            className={`px-5 py-2 text-xs font-bold rounded-full transition-all duration-300 relative z-10 cursor-pointer ${
-              billingCycle === "monthly"
-                ? "text-white bg-brand-primary shadow-sm"
-                : "text-brand-dark/60 hover:text-brand-dark"
-            }`}
-          >
-            Monthly Billing
-          </button>
-          <button
-            onClick={() => setBillingCycle("yearly")}
-            className={`px-5 py-2 text-xs font-bold rounded-full transition-all duration-300 relative z-10 cursor-pointer ${
-              billingCycle === "yearly"
-                ? "text-white bg-brand-primary shadow-sm"
-                : "text-brand-dark/60 hover:text-brand-dark"
-            }`}
-          >
-            Yearly Billing
-          </button>
-          <span className="absolute -top-7 right-2 bg-brand-success/15 dark:bg-brand-success/25 border border-brand-success/35 text-brand-success text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full tracking-wider animate-bounce">
-            Save 20%
-          </span>
-        </div>
-
+      <main style={{ flex: 1, zIndex: 10, maxWidth: "1200px", width: "100%", margin: "0 auto", padding: "0 24px 60px" }}>
+        
         {/* Status Notification */}
         {promoMessage && (
-          <div className={`mb-8 px-6 py-3.5 rounded-2xl border text-xs font-bold max-w-md text-center w-full animate-in fade-in duration-200 ${
-            promoSuccess 
-              ? "bg-brand-success/10 text-brand-success border-brand-success/20"
-              : "bg-brand-error/10 text-brand-error border-brand-error/20"
-          }`}>
+          <div
+            style={{
+              maxWidth: "500px",
+              margin: "0 auto 32px",
+              padding: "16px 20px",
+              border: `1px solid ${promoSuccess ? "var(--teal)" : "#FF6B5C"}`,
+              background: promoSuccess ? "rgba(94,224,168,0.05)" : "rgba(255,107,92,0.05)",
+              color: promoSuccess ? "var(--teal)" : "#FF6B5C",
+              fontFamily: "var(--mono)",
+              fontSize: "12px",
+              textAlign: "center",
+            }}
+          >
             {promoMessage}
           </div>
         )}
 
-        {/* Pricing Cards Container */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 w-full max-w-3xl items-stretch mb-8">
-          
-          {/* Free Tier Card */}
-          <div className="bg-brand-card border border-brand-dark/5 dark:border-brand-dark/15 rounded-3xl p-8 flex flex-col justify-between shadow-sm relative transition-all duration-300 hover:shadow-md hover:scale-[1.01]">
+        {/* Pricing Cards Grid */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+            gap: "24px",
+            marginBottom: "80px",
+          }}
+        >
+          {/* Card 1: Free Tier */}
+          <div
+            ref={(el) => (cardRefs.current["free"] = el)}
+            onMouseMove={(e) => handleMouseMove(e, "free")}
+            onMouseLeave={() => handleMouseLeave("free")}
+            className="model-card"
+            style={{
+              border: "1px solid var(--border)",
+              display: "flex",
+              flexDirection: "column",
+              justifyContent: "space-between",
+              minHeight: "440px",
+              padding: "40px 32px"
+            }}
+          >
             <div>
-              <div className="flex justify-between items-center mb-6">
-                <span className="text-xs font-extrabold text-brand-dark/45 uppercase tracking-wider font-quicksand">Standard</span>
-                <span className="bg-brand-dark/5 dark:bg-brand-dark/10 text-brand-dark/70 text-[10px] font-bold px-2.5 py-1 rounded-full uppercase">Basic</span>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+                <span style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "var(--muted)", textTransform: "uppercase" }}>Standard</span>
+                <span style={{ fontSize: "9px", fontFamily: "var(--mono)", textTransform: "uppercase", padding: "2px 8px", background: "var(--card)", border: "1px solid var(--border)", color: "var(--muted)" }}>Free</span>
               </div>
-              <h3 className="text-2xl font-black font-quicksand text-brand-dark mb-2">Free Plan</h3>
-              <p className="text-brand-dark/60 dark:text-brand-dark/80 text-xs font-light mb-8">Access standard intelligence and basic chat options.</p>
+              <h3 className="model-name" style={{ fontSize: "24px", color: "var(--text)" }}>Free Plan</h3>
+              <p className="model-desc" style={{ fontSize: "12.5px" }}>Access standard intelligence and basic chat options.</p>
               
-              <div className="flex items-baseline mb-8">
-                <span className="text-4xl font-black font-quicksand text-brand-dark">$0</span>
-                <span className="text-brand-dark/40 text-xs font-light ml-1">/ forever</span>
+              <div style={{ margin: "24px 0", display: "flex", alignItems: "baseline" }}>
+                <span style={{ fontSize: "42px", fontWeight: 700, fontFamily: "var(--mono)", color: "var(--text)" }}>$0</span>
+                <span style={{ fontSize: "12px", fontFamily: "var(--mono)", color: "var(--muted)", marginLeft: "4px" }}>/ forever</span>
               </div>
 
-              {/* Perks List */}
-              <ul className="space-y-4 mb-8">
-                <li className="flex items-center gap-3 text-xs text-brand-dark/80">
-                  <svg className="w-4 h-4 text-brand-success flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                  </svg>
-                  Unlimited text queries
-                </li>
-                <li className="flex items-center gap-3 text-xs text-brand-dark/80">
-                  <svg className="w-4 h-4 text-brand-success flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                  </svg>
-                  Free AI Models (Groq, NVIDIA, OpenRouter)
-                </li>
-                <li className="flex items-center gap-3 text-xs text-brand-dark/80">
-                  <svg className="w-4 h-4 text-brand-success flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                  </svg>
-                  Basic Image Generation
-                </li>
-                <li className="flex items-center gap-3 text-xs text-brand-dark/80 opacity-40">
-                  <svg className="w-4 h-4 text-brand-dark/40 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                  Vision Capabilities (Locked)
-                </li>
-                <li className="flex items-center gap-3 text-xs text-brand-dark/80 opacity-40">
-                  <svg className="w-4 h-4 text-brand-dark/40 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                  Premium Models: Gemini, Local AI (Locked)
-                </li>
+              <ul style={{ listStyle: "none", padding: 0, margin: "24px 0", display: "flex", flexDirection: "column", gap: "12px" }}>
+                {[
+                  "Unlimited text queries",
+                  "Free AI Models (Llama, Qwen, Mistral)",
+                  "Basic Image Generation",
+                  "Standard Response Speeds",
+                ].map((perk) => (
+                  <li key={perk} style={{ fontSize: "12.5px", display: "flex", alignItems: "center", gap: "8px" }}>
+                    <span style={{ color: "var(--teal)" }}>✔</span> {perk}
+                  </li>
+                ))}
               </ul>
             </div>
 
             <button
               disabled
-              className="w-full py-3.5 bg-brand-dark/5 dark:bg-brand-dark/10 text-brand-dark/45 text-xs font-bold rounded-full cursor-not-allowed border border-brand-dark/5 text-center"
+              style={{
+                width: "100%",
+                padding: "14px",
+                background: "rgba(255,255,255,0.03)",
+                border: "1px solid var(--border)",
+                color: "var(--muted)",
+                fontFamily: "var(--mono)",
+                fontSize: "11px",
+                textTransform: "uppercase",
+                cursor: "not-allowed",
+                textAlign: "center"
+              }}
             >
-              {loading ? "Checking status..." : profile && profile.plan === "ultimate" ? "Downgrade in Billing Portal" : "Current Plan"}
+              Current Plan
             </button>
           </div>
 
-          {/* Ultimate Tier Card (Elevated design) */}
-          <div className="bg-brand-card border-2 border-brand-primary dark:border-brand-primary rounded-3xl p-8 flex flex-col justify-between shadow-lg shadow-brand-primary/5 dark:shadow-none relative transition-all duration-300 hover:shadow-xl hover:scale-[1.01]">
-            <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-brand-primary text-white text-[10px] font-black uppercase px-4 py-1 rounded-full tracking-wider shadow-sm select-none">
-              Most Popular
-            </div>
-
+          {/* Card 2: Ultimate Tier */}
+          <div
+            ref={(el) => (cardRefs.current["ultimate"] = el)}
+            onMouseMove={(e) => handleMouseMove(e, "ultimate")}
+            onMouseLeave={() => handleMouseLeave("ultimate")}
+            className="model-card"
+            style={{
+              border: "2px solid var(--teal)",
+              display: "flex",
+              flexDirection: "column",
+              justifyContent: "space-between",
+              minHeight: "440px",
+              padding: "40px 32px",
+              boxShadow: "0 0 30px rgba(94,224,168,0.05)"
+            }}
+          >
             <div>
-              <div className="flex justify-between items-center mb-6">
-                <span className="text-xs font-extrabold text-brand-primary uppercase tracking-wider font-quicksand">Ultimate</span>
-                <span className="bg-brand-primary/10 text-brand-primary text-[10px] font-black px-2.5 py-1 rounded-full uppercase">Unlocked</span>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+                <span style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "var(--teal)", textTransform: "uppercase" }}>Ultimate</span>
+                <span style={{ fontSize: "9px", fontFamily: "var(--mono)", textTransform: "uppercase", padding: "2px 8px", background: "rgba(94,224,168,0.1)", border: "1px solid var(--teal)", color: "var(--teal)" }}>Popular</span>
               </div>
-              <h3 className="text-2xl font-black font-quicksand text-brand-dark mb-2">Ultimate Plan</h3>
-              <p className="text-brand-dark/60 dark:text-brand-dark/80 text-xs font-light mb-8">Unlock state-of-the-art multimodal vision, local minds, and speed.</p>
+              <h3 className="model-name" style={{ fontSize: "24px", color: "var(--text)" }}>Ultimate Plan</h3>
+              <p className="model-desc" style={{ fontSize: "12.5px" }}>Unlock state-of-the-art multimodal vision, local models, and speed.</p>
               
-              <div className="flex items-baseline mb-8">
-                <span className="text-4xl font-black font-quicksand text-brand-dark">
+              <div style={{ margin: "24px 0", display: "flex", alignItems: "baseline" }}>
+                <span style={{ fontSize: "42px", fontWeight: 700, fontFamily: "var(--mono)", color: "var(--teal)" }}>
                   ${billingCycle === "monthly" ? monthlyPrice : yearlyPrice}
                 </span>
-                <span className="text-brand-dark/40 text-xs font-light ml-1">/ month</span>
-                {billingCycle === "yearly" && (
-                  <span className="text-brand-dark/50 dark:text-brand-dark/65 text-[10px] font-bold ml-2">
-                    (billed ${yearlyPrice * 12}/year)
-                  </span>
-                )}
+                <span style={{ fontSize: "12px", fontFamily: "var(--mono)", color: "var(--muted)", marginLeft: "4px" }}>/ month</span>
               </div>
 
-              {/* Perks List */}
-              <ul className="space-y-4 mb-8">
-                <li className="flex items-center gap-3 text-xs text-brand-dark/80">
-                  <svg className="w-4 h-4 text-brand-primary flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                  </svg>
-                  <strong>Everything in Free</strong>
-                </li>
-                <li className="flex items-center gap-3 text-xs text-brand-dark/80">
-                  <svg className="w-4 h-4 text-brand-primary flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                  </svg>
-                  Vision support (attach images to messages)
-                </li>
-                <li className="flex items-center gap-3 text-xs text-brand-dark/80">
-                  <svg className="w-4 h-4 text-brand-primary flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                  </svg>
-                  Gemini 2.5 Pro Premium Model
-                </li>
-                <li className="flex items-center gap-3 text-xs text-brand-dark/80">
-                  <svg className="w-4 h-4 text-brand-primary flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                  </svg>
-                  Ollama Local Model Integration
-                </li>
-                <li className="flex items-center gap-3 text-xs text-brand-dark/80">
-                  <svg className="w-4 h-4 text-brand-primary flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                  </svg>
-                  Custom remote Cloud GPU setups
-                </li>
-                <li className="flex items-center gap-3 text-xs text-brand-dark/80">
-                  <svg className="w-4 h-4 text-brand-primary flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                  </svg>
-                  Priority queue bandwidth & speed
-                </li>
+              <ul style={{ listStyle: "none", padding: 0, margin: "24px 0", display: "flex", flexDirection: "column", gap: "12px" }}>
+                {[
+                  "Everything in Free Plan",
+                  "Vision support (image uploads)",
+                  "Premium models (Gemini, Claude, GPT)",
+                  "Ollama Local Model integration",
+                  "Priority bandwidth & speeds"
+                ].map((perk) => (
+                  <li key={perk} style={{ fontSize: "12.5px", display: "flex", alignItems: "center", gap: "8px" }}>
+                    <span style={{ color: "var(--teal)" }}>✔</span> {perk}
+                  </li>
+                ))}
               </ul>
             </div>
 
             {loading ? (
               <button
                 disabled
-                className="w-full py-3.5 bg-brand-primary/50 text-white text-xs font-bold rounded-full cursor-not-allowed text-center"
+                style={{
+                  width: "100%",
+                  padding: "14px",
+                  background: "var(--card)",
+                  border: "1px solid var(--border)",
+                  color: "var(--muted)",
+                  fontFamily: "var(--mono)",
+                  fontSize: "11px",
+                  textTransform: "uppercase",
+                  cursor: "not-allowed",
+                  textAlign: "center"
+                }}
               >
-                Checking Status...
+                Connecting...
               </button>
             ) : profile && profile.plan === "ultimate" ? (
-              <div className="flex flex-col gap-2 w-full">
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                 <button
                   disabled
-                  className="w-full py-3.5 bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-200 dark:border-amber-900/30 text-xs font-extrabold rounded-full text-center uppercase tracking-wider"
+                  style={{
+                    width: "100%",
+                    padding: "12px",
+                    background: "rgba(94,224,168,0.1)",
+                    border: "1px solid var(--teal)",
+                    color: "var(--teal)",
+                    fontFamily: "var(--mono)",
+                    fontSize: "11px",
+                    textTransform: "uppercase",
+                    cursor: "not-allowed",
+                    textAlign: "center"
+                  }}
                 >
-                  You're on Ultimate ✨
+                  Active on Ultimate ✨
                 </button>
                 <button
                   onClick={handleManagePortal}
                   disabled={loadingPortal}
-                  className="w-full py-2 bg-brand-dark/5 hover:bg-brand-dark/10 dark:bg-brand-dark/20 dark:hover:bg-brand-dark/25 text-brand-dark text-[10px] font-extrabold rounded-full uppercase tracking-wider cursor-pointer text-center duration-150"
+                  style={{
+                    width: "100%",
+                    padding: "8px",
+                    background: "transparent",
+                    border: "1px solid var(--border)",
+                    color: "var(--text)",
+                    fontFamily: "var(--mono)",
+                    fontSize: "9px",
+                    textTransform: "uppercase",
+                    cursor: "pointer",
+                    textAlign: "center"
+                  }}
                 >
-                  {loadingPortal ? "Redirecting..." : "Manage Subscription"}
+                  {loadingPortal ? "Redirecting..." : "Manage Billing Portal"}
                 </button>
               </div>
             ) : (
               <button
                 onClick={() => setIsModalOpen(true)}
                 disabled={checkingOut}
-                className="w-full py-3.5 bg-brand-primary hover:bg-brand-primary/95 text-white text-xs font-bold rounded-full shadow-md shadow-brand-primary/20 hover:scale-[1.01] active:scale-[0.99] transition-all duration-200 cursor-pointer text-center"
+                className="btn-primary"
+                style={{
+                  width: "100%",
+                  justifyContent: "center",
+                  fontSize: "11px",
+                  padding: "14px",
+                  textAlign: "center"
+                }}
               >
-                {checkingOut ? "Upgrading..." : "Upgrade to Ultimate"}
+                {checkingOut ? "Redirecting..." : "Upgrade to Ultimate"}
               </button>
             )}
           </div>
+
+          {/* Card 3: Developer Tier (Added as requested!) */}
+          <div
+            ref={(el) => (cardRefs.current["developer"] = el)}
+            onMouseMove={(e) => handleMouseMove(e, "developer")}
+            onMouseLeave={() => handleMouseLeave("developer")}
+            className="model-card"
+            style={{
+              border: "1px solid var(--border)",
+              display: "flex",
+              flexDirection: "column",
+              justifyContent: "space-between",
+              minHeight: "440px",
+              padding: "40px 32px"
+            }}
+          >
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+                <span style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "var(--muted)", textTransform: "uppercase" }}>Developer</span>
+                <span style={{ fontSize: "9px", fontFamily: "var(--mono)", textTransform: "uppercase", padding: "2px 8px", background: "var(--card)", border: "1px solid var(--border)", color: "var(--text)" }}>Power</span>
+              </div>
+              <h3 className="model-name" style={{ fontSize: "24px", color: "var(--text)" }}>Developer Plan</h3>
+              <p className="model-desc" style={{ fontSize: "12.5px" }}>For power creators. Extended GPU runtimes, high quotas, and API.</p>
+              
+              <div style={{ margin: "24px 0", display: "flex", alignItems: "baseline" }}>
+                <span style={{ fontSize: "42px", fontWeight: 700, fontFamily: "var(--mono)", color: "var(--text)" }}>
+                  ${billingCycle === "monthly" ? devMonthlyPrice : devYearlyPrice}
+                </span>
+                <span style={{ fontSize: "12px", fontFamily: "var(--mono)", color: "var(--muted)", marginLeft: "4px" }}>/ month</span>
+              </div>
+
+              <ul style={{ listStyle: "none", padding: 0, margin: "24px 0", display: "flex", flexDirection: "column", gap: "12px" }}>
+                {[
+                  "Everything in Ultimate Plan",
+                  "Dedicated GPU Cluster runtimes",
+                  "Extended context API endpoints",
+                  "Shared collaborative workspaces",
+                  "Early beta reasoning model access"
+                ].map((perk) => (
+                  <li key={perk} style={{ fontSize: "12.5px", display: "flex", alignItems: "center", gap: "8px" }}>
+                    <span style={{ color: "var(--teal)" }}>✔</span> {perk}
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {loading ? (
+              <button
+                disabled
+                style={{
+                  width: "100%",
+                  padding: "14px",
+                  background: "var(--card)",
+                  border: "1px solid var(--border)",
+                  color: "var(--muted)",
+                  fontFamily: "var(--mono)",
+                  fontSize: "11px",
+                  textTransform: "uppercase",
+                  cursor: "not-allowed",
+                  textAlign: "center"
+                }}
+              >
+                Connecting...
+              </button>
+            ) : profile && profile.plan === "ultimate" ? (
+              <button
+                disabled
+                style={{
+                  width: "100%",
+                  padding: "14px",
+                  background: "rgba(255,255,255,0.03)",
+                  border: "1px solid var(--border)",
+                  color: "var(--muted)",
+                  fontFamily: "var(--mono)",
+                  fontSize: "11px",
+                  textTransform: "uppercase",
+                  cursor: "not-allowed",
+                  textAlign: "center"
+                }}
+              >
+                Included in Ultimate
+              </button>
+            ) : (
+              <button
+                onClick={() => setIsModalOpen(true)}
+                disabled={checkingOut}
+                className="btn-secondary"
+                style={{
+                  width: "100%",
+                  justifyContent: "center",
+                  fontSize: "11px",
+                  padding: "14px",
+                  textAlign: "center"
+                }}
+              >
+                {checkingOut ? "Redirecting..." : "Upgrade to Developer"}
+              </button>
+            )}
+          </div>
+
         </div>
 
-        {/* Three Separate Promotional Pathways */}
-        <div className="max-w-4xl w-full mb-20">
-          <h3 className="text-xl font-black font-quicksand text-center mb-8">Demo Upgrade Pathways</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            
+        {/* Demo Upgrade Pathways */}
+        <div style={{ marginBottom: "80px" }}>
+          <h3 style={{ fontFamily: "var(--sans)", fontSize: "20px", fontWeight: 700, textAlign: "center", marginBottom: "32px", color: "var(--text)" }}>
+            Demo Upgrade Pathways
+          </h3>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+              gap: "24px",
+            }}
+          >
             {/* Developer Referral Card */}
-            <div className="bg-brand-card border border-brand-dark/10 dark:border-brand-dark/20 rounded-3xl p-6 flex flex-col justify-between items-center text-center shadow-xs transition-all duration-300 hover:shadow-md hover:scale-[1.01]">
-              <div className="flex flex-col items-center w-full">
-                <div className="w-10 h-10 rounded-full bg-brand-secondary/15 text-brand-secondary flex items-center justify-center text-lg mb-3">
-                  💼
-                </div>
-                <h4 className="text-xs font-black font-quicksand text-brand-dark uppercase tracking-wider mb-2">Developer Referral</h4>
-                <p className="text-[11px] text-brand-dark/60 dark:text-brand-dark/80 font-light leading-relaxed mb-6">
-                  For creators and developers. Enter your developer key below to claim **1 year** of Ultimate access.
+            <div
+              ref={(el) => (cardRefs.current["dev-ref"] = el)}
+              onMouseMove={(e) => handleMouseMove(e, "dev-ref")}
+              onMouseLeave={() => handleMouseLeave("dev-ref")}
+              className="feature-card"
+              style={{
+                border: "1px solid var(--border)",
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "space-between",
+                alignItems: "center",
+                textAlign: "center",
+                padding: "32px 24px"
+              }}
+            >
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+                <div style={{ fontSize: "24px", marginBottom: "16px" }}>💼</div>
+                <h4 style={{ fontFamily: "var(--mono)", fontSize: "11px", fontWeight: 700, textTransform: "uppercase", color: "var(--text)", marginBottom: "8px", letterSpacing: "0.08em" }}>
+                  Developer Referral
+                </h4>
+                <p style={{ fontSize: "11.5px", color: "var(--muted)", lineHeight: "1.6", marginBottom: "20px" }}>
+                  For creators. Enter your developer key below to claim <strong>1 year</strong> of Ultimate access.
                 </p>
               </div>
-              <div className="flex gap-2 w-full">
+              <div style={{ display: "flex", gap: "8px", width: "100%" }}>
                 <input
                   type="password"
                   value={devKeyInput}
                   onChange={(e) => setDevKeyInput(e.target.value)}
-                  placeholder="Enter Dev Key"
-                  className="flex-1 px-4 py-2.5 rounded-full bg-brand-bg/50 dark:bg-brand-bg/25 focus:bg-brand-bg border border-brand-dark/10 dark:border-brand-dark/20 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-brand-primary/20 w-full"
+                  placeholder="Dev Key"
+                  style={{
+                    flex: 1,
+                    padding: "8px 14px",
+                    background: "var(--dark)",
+                    border: "1px solid var(--border)",
+                    color: "var(--text)",
+                    fontSize: "11.5px",
+                    fontFamily: "var(--mono)",
+                    outline: "none"
+                  }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") handleReferralUpgrade("developer", devKeyInput);
                   }}
                 />
                 <button
                   onClick={() => handleReferralUpgrade("developer", devKeyInput)}
-                  className="px-4 py-2.5 bg-brand-secondary hover:bg-brand-secondary/90 text-white text-xs font-extrabold rounded-full transition-colors cursor-pointer"
+                  style={{
+                    padding: "8px 16px",
+                    background: "var(--teal)",
+                    color: "var(--dark)",
+                    border: "none",
+                    fontFamily: "var(--mono)",
+                    fontSize: "11px",
+                    fontWeight: 700,
+                    textTransform: "uppercase",
+                    cursor: "pointer"
+                  }}
                 >
                   Claim
                 </button>
@@ -514,30 +875,63 @@ export default function PricingPage() {
             </div>
 
             {/* Redeem Code Card */}
-            <div className="bg-brand-card border border-brand-dark/10 dark:border-brand-dark/20 rounded-3xl p-6 flex flex-col justify-between items-center text-center shadow-xs transition-all duration-300 hover:shadow-md hover:scale-[1.01]">
-              <div className="flex flex-col items-center w-full">
-                <div className="w-10 h-10 rounded-full bg-brand-dark/10 text-brand-dark/60 dark:bg-brand-dark/20 dark:text-brand-dark/85 flex items-center justify-center text-lg mb-3">
-                  🔑
-                </div>
-                <h4 className="text-xs font-black font-quicksand text-brand-dark uppercase tracking-wider mb-2">Redeem Promo Code</h4>
-                <p className="text-[11px] text-brand-dark/60 dark:text-brand-dark/80 font-light leading-relaxed mb-6">
-                  Have an access code? Enter it below (use code <code className="bg-brand-dark/5 px-1.5 py-0.5 rounded font-mono font-bold text-brand-primary">ULTIMATE</code>).
+            <div
+              ref={(el) => (cardRefs.current["promo"] = el)}
+              onMouseMove={(e) => handleMouseMove(e, "promo")}
+              onMouseLeave={() => handleMouseLeave("promo")}
+              className="feature-card"
+              style={{
+                border: "1px solid var(--border)",
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "space-between",
+                alignItems: "center",
+                textAlign: "center",
+                padding: "32px 24px"
+              }}
+            >
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+                <div style={{ fontSize: "24px", marginBottom: "16px" }}>🔑</div>
+                <h4 style={{ fontFamily: "var(--mono)", fontSize: "11px", fontWeight: 700, textTransform: "uppercase", color: "var(--text)", marginBottom: "8px", letterSpacing: "0.08em" }}>
+                  Redeem Promo Code
+                </h4>
+                <p style={{ fontSize: "11.5px", color: "var(--muted)", lineHeight: "1.6", marginBottom: "20px" }}>
+                  Have an access code? Enter it below (use code <code style={{ color: "var(--teal)", background: "rgba(94,224,168,0.1)", padding: "1px 4px", borderRadius: "2px" }}>ULTIMATE</code>).
                 </p>
               </div>
-              <div className="flex gap-2 w-full">
+              <div style={{ display: "flex", gap: "8px", width: "100%" }}>
                 <input
                   type="text"
                   value={promoCode}
                   onChange={(e) => setPromoCode(e.target.value)}
-                  placeholder="Enter code"
-                  className="flex-1 px-4 py-2.5 rounded-full bg-brand-bg/50 dark:bg-brand-bg/25 focus:bg-brand-bg border border-brand-dark/10 dark:border-brand-dark/20 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-brand-primary/20 w-full"
+                  placeholder="Code"
+                  style={{
+                    flex: 1,
+                    padding: "8px 14px",
+                    background: "var(--dark)",
+                    border: "1px solid var(--border)",
+                    color: "var(--text)",
+                    fontSize: "11.5px",
+                    fontFamily: "var(--mono)",
+                    outline: "none"
+                  }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") handleRedeemCode();
                   }}
                 />
                 <button
                   onClick={() => handleRedeemCode()}
-                  className="px-4 py-2.5 bg-brand-dark text-white hover:bg-brand-dark/90 dark:bg-brand-dark/20 dark:text-brand-dark dark:hover:bg-brand-dark/25 text-xs font-extrabold rounded-full transition-colors cursor-pointer"
+                  style={{
+                    padding: "8px 16px",
+                    background: "var(--teal)",
+                    color: "var(--dark)",
+                    border: "none",
+                    fontFamily: "var(--mono)",
+                    fontSize: "11px",
+                    fontWeight: 700,
+                    textTransform: "uppercase",
+                    cursor: "pointer"
+                  }}
                 >
                   Redeem
                 </button>
@@ -545,21 +939,46 @@ export default function PricingPage() {
             </div>
 
             {/* Tester Referral Card */}
-            <div className="bg-brand-card border border-brand-dark/10 dark:border-brand-dark/20 rounded-3xl p-6 flex flex-col justify-between items-center text-center shadow-xs transition-all duration-300 hover:shadow-md hover:scale-[1.01]">
-              <div className="flex flex-col items-center">
-                <div className="w-10 h-10 rounded-full bg-brand-primary/10 text-brand-primary flex items-center justify-center text-lg mb-3">
-                  🧪
-                </div>
-                <h4 className="text-xs font-black font-quicksand text-brand-dark uppercase tracking-wider mb-2">Tester Referral</h4>
-                <p className="text-[11px] text-brand-dark/60 dark:text-brand-dark/80 font-light leading-relaxed mb-6">
-                  For early beta testers and partners. Instantly activates the Ultimate plan for **3 months** for free.
+            <div
+              ref={(el) => (cardRefs.current["tester-ref"] = el)}
+              onMouseMove={(e) => handleMouseMove(e, "tester-ref")}
+              onMouseLeave={() => handleMouseLeave("tester-ref")}
+              className="feature-card"
+              style={{
+                border: "1px solid var(--border)",
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "space-between",
+                alignItems: "center",
+                textAlign: "center",
+                padding: "32px 24px"
+              }}
+            >
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+                <div style={{ fontSize: "24px", marginBottom: "16px" }}>🧪</div>
+                <h4 style={{ fontFamily: "var(--mono)", fontSize: "11px", fontWeight: 700, textTransform: "uppercase", color: "var(--text)", marginBottom: "8px", letterSpacing: "0.08em" }}>
+                  Tester Referral
+                </h4>
+                <p style={{ fontSize: "11.5px", color: "var(--muted)", lineHeight: "1.6", marginBottom: "20px" }}>
+                  For early beta testers and partners. Instantly activates the Ultimate plan for <strong>3 months</strong> free.
                 </p>
               </div>
               <button
                 onClick={() => handleReferralUpgrade("tester")}
-                className="w-full py-2.5 bg-brand-primary hover:bg-brand-primary/90 text-white text-xs font-extrabold rounded-full transition-colors cursor-pointer"
+                style={{
+                  width: "100%",
+                  padding: "10px",
+                  background: "var(--teal)",
+                  color: "var(--dark)",
+                  border: "none",
+                  fontFamily: "var(--mono)",
+                  fontSize: "11px",
+                  fontWeight: 700,
+                  textTransform: "uppercase",
+                  cursor: "pointer"
+                }}
               >
-                Claim Tester Referral (3Mo)
+                Claim Tester (3Mo)
               </button>
             </div>
 
@@ -567,35 +986,47 @@ export default function PricingPage() {
         </div>
 
         {/* FAQ Section */}
-        <div className="w-full max-w-2xl mb-12">
-          <h3 className="text-2xl font-black font-quicksand text-center mb-8">Frequently Asked Questions</h3>
-          <div className="space-y-4">
+        <div style={{ maxWidth: "700px", margin: "0 auto 60px" }}>
+          <h3 style={{ fontFamily: "var(--sans)", fontSize: "20px", fontWeight: 700, textAlign: "center", marginBottom: "32px", color: "var(--text)" }}>
+            Frequently Asked Questions
+          </h3>
+          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
             {faqs.map((faq, index) => {
               const isOpen = openFaqIndex === index;
               return (
                 <div
                   key={index}
-                  className="bg-brand-card/85 dark:bg-brand-card/65 border border-brand-dark/5 dark:border-brand-dark/20 rounded-2xl overflow-hidden transition-all duration-200"
+                  style={{
+                    border: "1px solid var(--border)",
+                    background: "var(--card)",
+                    overflow: "hidden"
+                  }}
                 >
                   <button
                     onClick={() => toggleFaq(index)}
-                    className="w-full text-left px-6 py-4.5 font-bold text-xs sm:text-sm font-quicksand flex items-center justify-between gap-4 cursor-pointer hover:bg-brand-dark/5 dark:hover:bg-brand-dark/10 transition-colors"
+                    style={{
+                      width: "100%",
+                      textAlign: "left",
+                      padding: "18px 24px",
+                      background: "none",
+                      border: "none",
+                      color: "var(--text)",
+                      fontFamily: "var(--mono)",
+                      fontSize: "12px",
+                      fontWeight: 700,
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      cursor: "pointer"
+                    }}
                   >
                     <span>{faq.q}</span>
-                    <svg
-                      className={`w-4 h-4 text-brand-dark/50 transform transition-transform duration-200 ${
-                        isOpen ? "rotate-180 text-brand-primary" : ""
-                      }`}
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                      strokeWidth="2.5"
-                    >
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
-                    </svg>
+                    <span style={{ color: "var(--teal)", fontSize: "14px", transform: isOpen ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s ease" }}>
+                      ➔
+                    </span>
                   </button>
                   {isOpen && (
-                    <div className="px-6 pb-5 text-xs text-brand-dark/75 dark:text-brand-dark/85 font-light leading-relaxed animate-in fade-in slide-in-from-top-1 duration-150">
+                    <div style={{ padding: "0 24px 18px", fontSize: "12.5px", color: "var(--muted)", lineHeight: "1.6" }}>
                       {faq.a}
                     </div>
                   )}
@@ -604,83 +1035,117 @@ export default function PricingPage() {
             })}
           </div>
         </div>
-      </div>
+
+      </main>
 
       {/* Upgrade Options Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div style={{ position: "fixed", inset: 0, zIndex: 150, display: "flex", alignItems: "center", justifyContent: "center", padding: "16px" }}>
           {/* backdrop */}
           <div
-            className="fixed inset-0 bg-brand-dark/40 dark:bg-brand-dark/60 backdrop-blur-[2px]"
+            style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.65)", backdropFilter: "blur(4px)" }}
             onClick={() => setIsModalOpen(false)}
           />
-          {/* dialog box */}
-          <div className="bg-brand-card border border-brand-dark/10 dark:border-brand-dark/25 rounded-3xl p-6 max-w-md w-full shadow-2xl relative z-10 animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between mb-4 border-b border-brand-dark/10 dark:border-brand-dark/20 pb-3">
-              <h3 className="text-lg font-black font-quicksand text-brand-dark">Upgrade Options</h3>
+          {/* dialog */}
+          <div
+            style={{
+              position: "relative",
+              width: "100%",
+              maxWidth: "420px",
+              background: "var(--card)",
+              border: "1px solid var(--border)",
+              padding: "32px",
+              zIndex: 10
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid var(--border)", paddingBottom: "12px", marginBottom: "20px" }}>
+              <h3 style={{ fontFamily: "var(--mono)", fontSize: "14px", fontWeight: 700, color: "var(--text)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                Upgrade Options
+              </h3>
               <button
                 onClick={() => setIsModalOpen(false)}
-                className="text-brand-dark/50 hover:text-brand-dark p-1 hover:bg-brand-dark/5 rounded-full cursor-pointer"
+                style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: "16px" }}
               >
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
+                ✕
               </button>
             </div>
 
-            <p className="text-xs text-brand-dark/70 dark:text-brand-dark/80 font-light leading-relaxed mb-6">
-              NexInc is currently in demo/preview mode. You can test the full Stripe checkout flow or use free developer pathways to upgrade.
+            <p style={{ fontSize: "12px", color: "var(--muted)", lineHeight: "1.6", marginBottom: "24px" }}>
+              NEXINC is in demo mode. Test the simulated Stripe checkout or use free pathways below to upgrade.
             </p>
 
-            <div className="space-y-3">
-              {/* Option 1: Stripe */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+              {/* stripe option */}
               <button
                 onClick={() => {
                   setIsModalOpen(false);
                   handleUpgrade();
                 }}
-                className="w-full p-4 rounded-2xl bg-brand-bg/50 hover:bg-brand-bg/85 dark:bg-brand-bg/25 dark:hover:bg-brand-bg/35 border border-brand-dark/10 dark:border-brand-dark/20 text-left flex items-start gap-3 transition-all cursor-pointer group"
+                style={{
+                  padding: "16px",
+                  background: "var(--dark)",
+                  border: "1px solid var(--border)",
+                  color: "var(--text)",
+                  textAlign: "left",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "12px"
+                }}
               >
-                <div className="w-8 h-8 rounded-full bg-brand-primary/10 text-brand-primary flex items-center justify-center text-sm font-bold flex-shrink-0 group-hover:scale-110 duration-150">
-                  💳
-                </div>
+                <div style={{ fontSize: "20px" }}>💳</div>
                 <div>
-                  <p className="text-xs font-bold text-brand-dark">Test Stripe Checkout</p>
-                  <p className="text-[10px] text-brand-dark/50 font-light">Redirect to Stripe test checkout page. Use card number 4242...</p>
+                  <div style={{ fontSize: "12px", fontWeight: 700 }}>Test Stripe Checkout</div>
+                  <div style={{ fontSize: "10px", color: "var(--muted)", marginTop: "2px" }}>Simulated payment gateway (4242 card)</div>
                 </div>
               </button>
 
-              {/* Option 2: Developer Referral */}
-              <div className="w-full p-4 rounded-2xl bg-brand-bg/50 border border-brand-dark/10 dark:border-brand-dark/20 text-left flex flex-col gap-3 transition-all duration-200">
+              {/* Developer Referral inside modal */}
+              <div style={{ padding: "16px", background: "var(--dark)", border: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: "10px" }}>
                 <button
-                  type="button"
                   onClick={() => setShowModalDevInput(!showModalDevInput)}
-                  className="w-full flex items-start gap-3 text-left cursor-pointer group"
+                  style={{ background: "none", border: "none", color: "var(--text)", textAlign: "left", cursor: "pointer", display: "flex", alignItems: "center", gap: "12px" }}
                 >
-                  <div className="w-8 h-8 rounded-full bg-brand-secondary/15 text-brand-secondary flex items-center justify-center text-sm font-bold flex-shrink-0 group-hover:scale-110 duration-150">
-                    💼
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-xs font-bold text-brand-dark">Developer Referral (1 Year)</p>
-                    <p className="text-[10px] text-brand-dark/50 font-light">Claim 365 days of free premium developer access.</p>
+                  <div style={{ fontSize: "20px" }}>💼</div>
+                  <div>
+                    <div style={{ fontSize: "12px", fontWeight: 700 }}>Developer Referral (1 Year)</div>
+                    <div style={{ fontSize: "10px", color: "var(--muted)", marginTop: "2px" }}>Claim 365 days of free power access</div>
                   </div>
                 </button>
                 {showModalDevInput && (
-                  <div className="flex gap-2 items-center w-full pl-11 animate-in slide-in-from-top-1 duration-150">
+                  <div style={{ display: "flex", gap: "8px", marginTop: "4px", paddingLeft: "32px" }}>
                     <input
                       type="password"
                       value={modalDevKey}
                       onChange={(e) => setModalDevKey(e.target.value)}
-                      placeholder="Enter Dev Key"
-                      className="flex-1 px-3 py-1.5 rounded-full bg-brand-card focus:bg-brand-bg border border-brand-dark/10 text-[10px] font-bold focus:outline-none focus:ring-1 focus:ring-brand-primary/20"
+                      placeholder="Dev Key"
+                      style={{
+                        flex: 1,
+                        padding: "6px 12px",
+                        background: "var(--card)",
+                        border: "1px solid var(--border)",
+                        color: "var(--text)",
+                        fontSize: "11px",
+                        fontFamily: "var(--mono)",
+                        outline: "none"
+                      }}
                       onKeyDown={(e) => {
                         if (e.key === "Enter") handleReferralUpgrade("developer", modalDevKey);
                       }}
                     />
                     <button
-                      type="button"
                       onClick={() => handleReferralUpgrade("developer", modalDevKey)}
-                      className="px-3 py-1.5 bg-brand-secondary hover:bg-brand-secondary/90 text-white text-[10px] font-extrabold rounded-full transition-colors cursor-pointer"
+                      style={{
+                        padding: "6px 12px",
+                        background: "var(--teal)",
+                        color: "var(--dark)",
+                        border: "none",
+                        fontFamily: "var(--mono)",
+                        fontSize: "9px",
+                        fontWeight: 700,
+                        textTransform: "uppercase",
+                        cursor: "pointer"
+                      }}
                     >
                       Submit
                     </button>
@@ -688,39 +1153,69 @@ export default function PricingPage() {
                 )}
               </div>
 
-              {/* Option 3: Tester Referral */}
+              {/* Tester Referral inside modal */}
               <button
                 onClick={() => handleReferralUpgrade("tester")}
-                className="w-full p-4 rounded-2xl bg-brand-bg/50 hover:bg-brand-bg/85 dark:bg-brand-bg/25 dark:hover:bg-brand-bg/35 border border-brand-dark/10 dark:border-brand-dark/20 text-left flex items-start gap-3 transition-all cursor-pointer group"
+                style={{
+                  padding: "16px",
+                  background: "var(--dark)",
+                  border: "1px solid var(--border)",
+                  color: "var(--text)",
+                  textAlign: "left",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "12px"
+                }}
               >
-                <div className="w-8 h-8 rounded-full bg-brand-primary/10 text-brand-primary flex items-center justify-center text-sm font-bold flex-shrink-0 group-hover:scale-110 duration-150">
-                  🧪
-                </div>
+                <div style={{ fontSize: "20px" }}>🧪</div>
                 <div>
-                  <p className="text-xs font-bold text-brand-dark">Beta Tester Referral (3 Months)</p>
-                  <p className="text-[10px] text-brand-dark/50 font-light">Instantly activate Ultimate plan for 90 days for free.</p>
+                  <div style={{ fontSize: "12px", fontWeight: 700 }}>Beta Tester Referral (3 Months)</div>
+                  <div style={{ fontSize: "10px", color: "var(--muted)", marginTop: "2px" }}>Activate Ultimate tier instantly</div>
                 </div>
               </button>
 
-              {/* Option 3: Code */}
+              {/* simulated ULTIMATE code */}
               <button
-                onClick={() => {
-                  handleRedeemCode("ULTIMATE");
+                onClick={() => handleRedeemCode("ULTIMATE")}
+                style={{
+                  padding: "16px",
+                  background: "var(--dark)",
+                  border: "1px solid var(--border)",
+                  color: "var(--text)",
+                  textAlign: "left",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "12px"
                 }}
-                className="w-full p-4 rounded-2xl bg-brand-bg/50 hover:bg-brand-bg/85 dark:bg-brand-bg/25 dark:hover:bg-brand-bg/35 border border-brand-dark/10 dark:border-brand-dark/20 text-left flex items-start gap-3 transition-all cursor-pointer group"
               >
-                <div className="w-8 h-8 rounded-full bg-brand-dark/10 text-brand-dark/60 dark:bg-brand-dark/20 dark:text-brand-dark/80 flex items-center justify-center text-sm font-bold flex-shrink-0 group-hover:scale-110 duration-150">
-                  🔑
-                </div>
+                <div style={{ fontSize: "20px" }}>🔑</div>
                 <div>
-                  <p className="text-xs font-bold text-brand-dark">Redeem Code 'ULTIMATE'</p>
-                  <p className="text-[10px] text-brand-dark/50 font-light">Immediately unlock the Ultimate plan via simulated promo code.</p>
+                  <div style={{ fontSize: "12px", fontWeight: 700 }}>Redeem code 'ULTIMATE'</div>
+                  <div style={{ fontSize: "10px", color: "var(--muted)", marginTop: "2px" }}>Instantly upgrade through coupon code</div>
                 </div>
               </button>
+
             </div>
           </div>
         </div>
       )}
+
+      {/* Footer */}
+      <footer style={{ marginTop: "auto" }}>
+        <div className="footer-copy">© 2026 NEXINC. ALL RIGHTS RESERVED.</div>
+        <div className="footer-copy" style={{ display: "flex", gap: "32px" }}>
+          <a href="#" style={{ color: "var(--muted)", textDecoration: "none", fontFamily: "var(--mono)", fontSize: "11px", letterSpacing: "0.08em" }}>DOCS</a>
+          <a href="#" style={{ color: "var(--muted)", textDecoration: "none", fontFamily: "var(--mono)", fontSize: "11px", letterSpacing: "0.08em" }}>STATUS</a>
+          <a href="#" style={{ color: "var(--muted)", textDecoration: "none", fontFamily: "var(--mono)", fontSize: "11px", letterSpacing: "0.08em" }}>PRIVACY</a>
+        </div>
+        <div className="footer-status">
+          <div className="status-dot"></div>
+          RUNTIME NOMINAL · NODE GEMINI-2.5-PRO
+        </div>
+      </footer>
+
     </div>
   );
 }
