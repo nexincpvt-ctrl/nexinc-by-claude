@@ -28,6 +28,28 @@ export async function POST(req) {
     }
 
     const priceId = PLAN_PRICES[billingCycle];
+    
+    // If Stripe is in demo mode (missing real secret key or pricing plan configuration), directly upgrade user profile in Supabase DB and redirect back.
+    if (!process.env.STRIPE_SECRET_KEY || process.env.STRIPE_SECRET_KEY === "sk_test_placeholder" || !priceId || priceId.startsWith("price_placeholder")) {
+      const days = billingCycle === "yearly" ? 365 : 30;
+      const { error: dbError } = await supabase
+        .from("profiles")
+        .update({
+          plan: "ultimate",
+          billing_cycle: billingCycle,
+          plan_renews_at: new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString(),
+        })
+        .eq("id", user.id);
+
+      if (dbError) {
+        console.error("Demo checkout upgrade database error:", dbError.message);
+        return NextResponse.json({ error: "Failed to upgrade profile: " + dbError.message }, { status: 500 });
+      }
+
+      const origin = req.headers.get("origin") || "http://localhost:3000";
+      return NextResponse.json({ url: `${origin}/dashboard?upgraded=true` });
+    }
+
     if (!priceId) {
       return NextResponse.json(
         { error: `Stripe Price ID for ${billingCycle} is not configured on the server.` },

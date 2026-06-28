@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nexinc — Sign in</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0B0D10;
+    --panel:#13161B;
+    --panel-2:#181C22;
+    --border:#262B33;
+    --border-soft:#1E2229;
+    --text:#E9EBEE;
+    --text-dim:#8A919C;
+    --text-faint:#565D68;
+    --signal:#5EE0A8;
+    --signal-dim:#2E5E4C;
+    --signal-glow:rgba(94,224,168,0.35);
+    --warn:#FF6B5C;
+    --node-a:#5EE0A8;
+    --node-b:#5C9DFF;
+    --node-c:#C792FF;
+    --radius:2px;
+    --mono:'JetBrains Mono', monospace;
+    --sans:'Inter', sans-serif;
+  }
+
+  *{ margin:0; padding:0; box-sizing:border-box; }
+
+  html,body{ height:100%; }
+
+  body{
+    background:var(--bg);
+    color:var(--text);
+    font-family:var(--sans);
+    overflow:hidden;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  .stage{
+    display:grid;
+    grid-template-columns: 1.15fr 1fr;
+    height:100vh;
+    width:100vw;
+  }
+
+  /* ============ LEFT: 3D CONSOLE ============ */
+  .console{
+    position:relative;
+    background:
+      radial-gradient(circle at 30% 20%, rgba(94,224,168,0.06), transparent 45%),
+      linear-gradient(180deg, #0A0C0F 0%, #0D1014 100%);
+    border-right:1px solid var(--border);
+    overflow:hidden;
+    display:flex;
+    flex-direction:column;
+  }
+
+  .console::before{
+    content:'';
+    position:absolute;
+    inset:0;
+    background-image:
+      linear-gradient(var(--border-soft) 1px, transparent 1px),
+      linear-gradient(90deg, var(--border-soft) 1px, transparent 1px);
+    background-size:40px 40px;
+    opacity:0.4;
+    mask-image: radial-gradient(circle at 50% 45%, black 10%, transparent 75%);
+  }
+
+  .console-header{
+    position:relative;
+    z-index:5;
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding:28px 36px;
+    font-family:var(--mono);
+    font-size:12px;
+    letter-spacing:0.08em;
+    color:var(--text-faint);
+    text-transform:uppercase;
+  }
+  .dot-row{ display:flex; gap:6px; margin-right:8px; }
+  .dot{ width:8px; height:8px; border-radius:50%; background:var(--border); }
+  .dot.live{ background:var(--signal); box-shadow:0 0 8px var(--signal-glow); animation:pulse 2s ease-in-out infinite; }
+
+  @keyframes pulse{
+    0%,100%{ opacity:1; }
+    50%{ opacity:0.45; }
+  }
+
+  /* 3D scene */
+  .scene-wrap{
+    position:relative;
+    z-index:3;
+    flex:1;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    perspective:1400px;
+  }
+
+  .scene{
+    width:420px;
+    height:420px;
+    position:relative;
+    transform-style:preserve-3d;
+    transform: rotateX(55deg) rotateZ(45deg);
+    transition: transform 0.15s ease-out;
+  }
+
+  .node{
+    position:absolute;
+    width:84px;
+    height:84px;
+    transform-style:preserve-3d;
+    animation: floatY 6s ease-in-out infinite;
+  }
+
+  .node .face{
+    position:absolute;
+    width:84px;
+    height:84px;
+    border:1px solid rgba(255,255,255,0.08);
+  }
+  .node .top{
+    background:linear-gradient(135deg, var(--face-a), var(--face-b));
+    transform: translateZ(42px);
+    box-shadow: 0 0 24px var(--face-glow);
+  }
+  .node .side-r{
+    width:42px;
+    background:var(--face-c);
+    transform: rotateY(90deg) translateZ(42px) translateX(0);
+    transform-origin: right;
+    left:42px;
+  }
+  .node .side-b{
+    height:42px;
+    background:var(--face-d);
+    transform: rotateX(-90deg) translateZ(42px);
+    transform-origin: bottom;
+    top:42px;
+  }
+
+  @keyframes floatY{
+    0%,100%{ transform: translateZ(0px); }
+    50%{ transform: translateZ(26px); }
+  }
+
+  .node.n1{ --face-a:#6FF0BC; --face-b:#3FAE85; --face-c:#1F6E54; --face-d:#173F31; --face-glow: rgba(94,224,168,0.45); top:60px; left:168px; animation-delay:0s; }
+  .node.n2{ --face-a:#7CB4FF; --face-b:#4B7FE0; --face-c:#2C4F94; --face-d:#1C3160; --face-glow: rgba(92,157,255,0.4); top:168px; left:60px; animation-delay:0.9s; }
+  .node.n3{ --face-a:#D9A8FF; --face-b:#A45CE8; --face-c:#6B349C; --face-d:#421F62; --face-glow: rgba(199,146,255,0.4); top:168px; left:276px; animation-delay:1.8s; }
+  .node.n4{ --face-a:#FFD27C; --face-b:#E0A03F; --face-c:#946A21; --face-d:#5C4112; --face-glow: rgba(224,160,63,0.35); top:276px; left:168px; animation-delay:2.7s; }
+  .node.n5{ --face-a:#9FA8B5; --face-b:#5E6877; --face-c:#3A414C; --face-d:#23272E; --face-glow: rgba(159,168,181,0.3); top:168px; left:168px; animation-delay:0.4s; transform-style:preserve-3d; }
+
+  .beam{
+    position:absolute;
+    background:linear-gradient(90deg, transparent, var(--signal), transparent);
+    height:2px;
+    opacity:0.55;
+    transform-style:preserve-3d;
+  }
+  .beam.b1{ top:102px; left:144px; width:108px; transform: translateZ(20px) rotate(45deg); transform-origin:left; }
+  .beam.b2{ top:210px; left:144px; width:108px; transform: translateZ(20px) rotate(-45deg); transform-origin:left; }
+  .beam.b3{ top:102px; left:210px; width:108px; transform: translateZ(20px) rotate(135deg); transform-origin:left; }
+  .beam.b4{ top:210px; left:210px; width:108px; transform: translateZ(20px) rotate(-135deg); transform-origin:left; }
+
+  .scene-caption{
+    position:relative;
+    z-index:5;
+    text-align:center;
+    padding:0 36px 40px;
+    font-family:var(--mono);
+  }
+  .scene-caption .label{
+    font-size:11px;
+    letter-spacing:0.12em;
+    color:var(--text-faint);
+    text-transform:uppercase;
+    margin-bottom:10px;
+  }
+  .scene-caption h1{
+    font-size:28px;
+    font-weight:700;
+    letter-spacing:-0.01em;
+    color:var(--text);
+    line-height:1.3;
+  }
+  .scene-caption h1 span{ color:var(--signal); }
+
+  .ticker{
+    position:relative;
+    z-index:5;
+    border-top:1px solid var(--border);
+    padding:18px 36px;
+    font-family:var(--mono);
+    font-size:11.5px;
+    color:var(--text-faint);
+    display:flex;
+    justify-content:space-between;
+    letter-spacing:0.02em;
+  }
+  .ticker b{ color:var(--text-dim); font-weight:500; }
+
+  /* ============ RIGHT: FORM ============ */
+  .formside{
+    background:var(--panel);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:40px;
+    position:relative;
+  }
+
+  .card{
+    width:100%;
+    max-width:400px;
+  }
+
+  .brand{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    margin-bottom:48px;
+  }
+  .brand-mark{
+    width:30px; height:30px;
+    background:linear-gradient(135deg, var(--signal), var(--signal-dim));
+    position:relative;
+    flex-shrink:0;
+  }
+  .brand-mark::after{
+    content:'';
+    position:absolute;
+    inset:6px;
+    background:var(--bg);
+  }
+  .brand-name{
+    font-family:var(--mono);
+    font-weight:700;
+    font-size:16px;
+    letter-spacing:0.02em;
+  }
+
+  .mode-row{
+    display:flex;
+    border:1px solid var(--border);
+    margin-bottom:32px;
+  }
+  .mode-btn{
+    flex:1;
+    background:transparent;
+    border:none;
+    color:var(--text-faint);
+    font-family:var(--mono);
+    font-size:12px;
+    letter-spacing:0.06em;
+    text-transform:uppercase;
+    padding:11px 0;
+    cursor:pointer;
+    transition: color 0.2s, background 0.2s;
+  }
+  .mode-btn.active{
+    background:var(--panel-2);
+    color:var(--signal);
+  }
+  .mode-btn:not(.active):hover{ color:var(--text-dim); }
+
+  .card h2{
+    font-size:22px;
+    font-weight:600;
+    margin-bottom:6px;
+    letter-spacing:-0.01em;
+  }
+  .card .sub{
+    font-size:13.5px;
+    color:var(--text-dim);
+    margin-bottom:30px;
+    line-height:1.5;
+  }
+  .card .sub a{ color:var(--signal); text-decoration:none; }
+  .card .sub a:hover{ text-decoration:underline; }
+
+  .field{
+    margin-bottom:18px;
+  }
+  .field label{
+    display:block;
+    font-size:12px;
+    font-family:var(--mono);
+    color:var(--text-dim);
+    margin-bottom:8px;
+    letter-spacing:0.03em;
+  }
+  .input-wrap{
+    position:relative;
+    border:1px solid var(--border);
+    background:var(--bg);
+    transition: border-color 0.18s, box-shadow 0.18s;
+  }
+  .input-wrap:focus-within{
+    border-color:var(--signal);
+    box-shadow: 0 0 0 3px rgba(94,224,168,0.12);
+  }
+  .input-wrap input{
+    width:100%;
+    background:transparent;
+    border:none;
+    outline:none;
+    color:var(--text);
+    font-family:var(--sans);
+    font-size:14px;
+    padding:13px 14px;
+  }
+  .input-wrap input::placeholder{ color:var(--text-faint); }
+
+  .toggle-eye{
+    position:absolute;
+    right:10px;
+    top:50%;
+    transform:translateY(-50%);
+    background:none;
+    border:none;
+    color:var(--text-faint);
+    cursor:pointer;
+    padding:4px;
+    display:flex;
+    align-items:center;
+  }
+  .toggle-eye:hover{ color:var(--text-dim); }
+
+  .row-between{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin:4px 0 24px;
+  }
+  .check-row{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    font-size:13px;
+    color:var(--text-dim);
+  }
+  .check-row input{
+    appearance:none;
+    width:15px; height:15px;
+    border:1px solid var(--border);
+    background:var(--bg);
+    cursor:pointer;
+    position:relative;
+    flex-shrink:0;
+  }
+  .check-row input:checked{
+    background:var(--signal);
+    border-color:var(--signal);
+  }
+  .check-row input:checked::after{
+    content:'';
+    position:absolute;
+    left:4px; top:1px;
+    width:4px; height:8px;
+    border-right:2px solid var(--bg);
+    border-bottom:2px solid var(--bg);
+    transform:rotate(45deg);
+  }
+  .forgot{
+    font-size:13px;
+    color:var(--signal);
+    text-decoration:none;
+  }
+  .forgot:hover{ text-decoration:underline; }
+
+  .btn-primary{
+    width:100%;
+    background:var(--signal);
+    color:#06140E;
+    border:none;
+    font-family:var(--mono);
+    font-weight:700;
+    font-size:13.5px;
+    letter-spacing:0.04em;
+    text-transform:uppercase;
+    padding:14px 0;
+    cursor:pointer;
+    position:relative;
+    overflow:hidden;
+    transition: transform 0.15s, box-shadow 0.2s;
+  }
+  .btn-primary:hover{
+    box-shadow: 0 0 0 1px var(--signal), 0 8px 24px rgba(94,224,168,0.25);
+    transform: translateY(-1px);
+  }
+  .btn-primary:active{ transform: translateY(0); }
+  .btn-primary .shine{
+    position:absolute;
+    top:0; left:-100%;
+    width:60%; height:100%;
+    background:linear-gradient(100deg, transparent, rgba(255,255,255,0.35), transparent);
+    transition:none;
+  }
+  .btn-primary:hover .shine{
+    left:120%;
+    transition: left 0.7s ease;
+  }
+
+  .divider{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    margin:26px 0;
+    font-family:var(--mono);
+    font-size:11px;
+    color:var(--text-faint);
+    text-transform:uppercase;
+    letter-spacing:0.08em;
+  }
+  .divider::before, .divider::after{
+    content:'';
+    flex:1;
+    height:1px;
+    background:var(--border);
+  }
+
+  .oauth-grid{
+    display:grid;
+    grid-template-columns: 1fr 1fr;
+    gap:10px;
+    margin-bottom:28px;
+  }
+  .oauth-btn{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:8px;
+    border:1px solid var(--border);
+    background:var(--panel-2);
+    color:var(--text-dim);
+    font-size:13px;
+    font-family:var(--sans);
+    font-weight:500;
+    padding:11px 0;
+    cursor:pointer;
+    transition: border-color 0.18s, color 0.18s, transform 0.15s;
+  }
+  .oauth-btn:hover{
+    border-color:var(--text-faint);
+    color:var(--text);
+    transform: translateY(-1px);
+  }
+  .oauth-btn svg{ width:16px; height:16px; flex-shrink:0; }
+
+  .footer-link{
+    text-align:center;
+    font-size:13px;
+    color:var(--text-dim);
+  }
+  .footer-link a{ color:var(--signal); text-decoration:none; font-weight:500; }
+  .footer-link a:hover{ text-decoration:underline; }
+
+  /* shake animation for validation */
+  .shake{
+    animation: shakeAnim 0.4s;
+  }
+  @keyframes shakeAnim{
+    0%,100%{ transform:translateX(0); }
+    20%{ transform:translateX(-6px); }
+    40%{ transform:translateX(6px); }
+    60%{ transform:translateX(-4px); }
+    80%{ transform:translateX(4px); }
+  }
+
+  .err-msg{
+    font-size:12px;
+    color:var(--warn);
+    margin-top:6px;
+    font-family:var(--mono);
+    display:none;
+  }
+  .err-msg.show{ display:block; }
+
+  @media (max-width: 880px){
+    .stage{ grid-template-columns: 1fr; }
+    .console{ display:none; }
+    .formside{ padding:24px; }
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    .node{ animation:none !important; }
+    .dot.live{ animation:none !important; }
+    .scene{ transition:none !important; }
+  }
+</style>
+</head>
+<body>
+
+<div class="stage">
+
+  <!-- LEFT CONSOLE -->
+  <div class="console" id="console">
+    <div class="console-header">
+      <div class="dot-row">
+        <div class="dot live"></div>
+        <div class="dot"></div>
+        <div class="dot"></div>
+      </div>
+      nexinc / runtime — us-east-1a
+    </div>
+
+    <div class="scene-wrap" id="sceneWrap">
+      <div class="scene" id="scene">
+        <div class="beam b1"></div>
+        <div class="beam b2"></div>
+        <div class="beam b3"></div>
+        <div class="beam b4"></div>
+
+        <div class="node n5"><div class="face top"></div><div class="face side-r"></div><div class="face side-b"></div></div>
+        <div class="node n1"><div class="face top"></div><div class="face side-r"></div><div class="face side-b"></div></div>
+        <div class="node n2"><div class="face top"></div><div class="face side-r"></div><div class="face side-b"></div></div>
+        <div class="node n3"><div class="face top"></div><div class="face side-r"></div><div class="face side-b"></div></div>
+        <div class="node n4"><div class="face top"></div><div class="face side-r"></div><div class="face side-b"></div></div>
+      </div>
+    </div>
+
+    <div class="scene-caption">
+      <div class="label">Model mesh · live</div>
+      <h1>Every model.<br>One <span>terminal</span>.</h1>
+    </div>
+
+    <div class="ticker">
+      <span><b>6</b> themes loaded</span>
+      <span><b>uptime</b> 99.98%</span>
+      <span><b>node</b> gemini-2.5-pro</span>
+    </div>
+  </div>
+
+  <!-- RIGHT FORM -->
+  <div class="formside">
+    <div class="card">
+      <div class="brand">
+        <div class="brand-mark"></div>
+        <div class="brand-name">NEXINC</div>
+      </div>
+
+      <div class="mode-row">
+        <button class="mode-btn active" id="tabSignin" type="button">Sign in</button>
+        <button class="mode-btn" id="tabSignup" type="button">Create account</button>
+      </div>
+
+      <div id="panelSignin">
+        <h2>Welcome back</h2>
+        <p class="sub">Sign in to pick up where you left off.</p>
+
+        <form id="formSignin" novalidate>
+          <div class="field">
+            <label for="email">Email</label>
+            <div class="input-wrap">
+              <input type="email" id="email" placeholder="you@domain.com" autocomplete="email" required>
+            </div>
+            <div class="err-msg" id="errEmail">Enter a valid email address.</div>
+          </div>
+
+          <div class="field">
+            <label for="password">Password</label>
+            <div class="input-wrap">
+              <input type="password" id="password" placeholder="••••••••" autocomplete="current-password" required>
+              <button type="button" class="toggle-eye" id="toggleEye" aria-label="Show password">
+                <svg id="eyeIcon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+            </div>
+            <div class="err-msg" id="errPass">Password must be at least 6 characters.</div>
+          </div>
+
+          <div class="row-between">
+            <label class="check-row">
+              <input type="checkbox" id="remember">
+              Remember me
+            </label>
+            <a href="#" class="forgot">Forgot password?</a>
+          </div>
+
+          <button type="submit" class="btn-primary" id="submitBtn">
+            <span class="shine"></span>
+            <span id="submitLabel">Sign in</span>
+          </button>
+        </form>
+
+        <div class="divider">or continue with</div>
+
+        <div class="oauth-grid">
+          <button class="oauth-btn" type="button">
+            <svg viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.99.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+            Google
+          </button>
+          <button class="oauth-btn" type="button">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.65.5.5 5.65.5 12c0 5.09 3.29 9.39 7.86 10.91.57.1.78-.25.78-.55 0-.27-.01-1.17-.01-2.13-3.2.7-3.87-1.37-3.87-1.37-.52-1.33-1.28-1.68-1.28-1.68-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.03 1.76 2.69 1.25 3.35.95.1-.74.4-1.25.72-1.54-2.55-.29-5.24-1.28-5.24-5.7 0-1.26.45-2.29 1.18-3.1-.12-.29-.51-1.46.11-3.04 0 0 .96-.31 3.15 1.18.91-.25 1.89-.38 2.86-.38.97 0 1.95.13 2.86.38 2.19-1.49 3.15-1.18 3.15-1.18.62 1.58.23 2.75.11 3.04.74.81 1.18 1.84 1.18 3.1 0 4.43-2.7 5.41-5.26 5.7.42.36.78 1.07.78 2.16 0 1.56-.01 2.82-.01 3.2 0 .31.21.67.79.55C20.21 21.39 23.5 17.09 23.5 12 23.5 5.65 18.35.5 12 .5z"/></svg>
+            GitHub
+          </button>
+        </div>
+
+        <div class="footer-link">New to Nexinc? <a href="#" id="switchToSignup">Create an account</a></div>
+      </div>
+
+      <!-- SIGN UP PANEL (hidden by default) -->
+      <div id="panelSignup" style="display:none;">
+        <h2>Create your account</h2>
+        <p class="sub">Spin up a workspace and start running models.</p>
+
+        <form id="formSignup" novalidate>
+          <div class="field">
+            <label for="suName">Full name</label>
+            <div class="input-wrap">
+              <input type="text" id="suName" placeholder="Jane Doe" autocomplete="name" required>
+            </div>
+          </div>
+          <div class="field">
+            <label for="suEmail">Email</label>
+            <div class="input-wrap">
+              <input type="email" id="suEmail" placeholder="you@domain.com" autocomplete="email" required>
+            </div>
+          </div>
+          <div class="field">
+            <label for="suPassword">Password</label>
+            <div class="input-wrap">
+              <input type="password" id="suPassword" placeholder="At least 8 characters" autocomplete="new-password" required>
+            </div>
+          </div>
+
+          <button type="submit" class="btn-primary">
+            <span class="shine"></span>
+            <span>Create account</span>
+          </button>
+        </form>
+
+        <div class="footer-link" style="margin-top:18px;">Already have an account? <a href="#" id="switchToSignin">Sign in</a></div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+<script>
+  // Parallax tilt on the 3D scene based on pointer position
+  const sceneWrap = document.getElementById('sceneWrap');
+  const scene = document.getElementById('scene');
+  let rafId = null;
+
+  sceneWrap.addEventListener('mousemove', (e) => {
+    const rect = sceneWrap.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width - 0.5;
+    const y = (e.clientY - rect.top) / rect.height - 0.5;
+    if (rafId) cancelAnimationFrame(rafId);
+    rafId = requestAnimationFrame(() => {
+      const rx = 55 - y * 14;
+      const rz = 45 + x * 14;
+      scene.style.transform = `rotateX(${rx}deg) rotateZ(${rz}deg)`;
+    });
+  });
+  sceneWrap.addEventListener('mouseleave', () => {
+    scene.style.transform = 'rotateX(55deg) rotateZ(45deg)';
+  });
+
+  // Tab switching
+  const tabSignin = document.getElementById('tabSignin');
+  const tabSignup = document.getElementById('tabSignup');
+  const panelSignin = document.getElementById('panelSignin');
+  const panelSignup = document.getElementById('panelSignup');
+
+  function showSignin(){
+    tabSignin.classList.add('active');
+    tabSignup.classList.remove('active');
+    panelSignin.style.display = '';
+    panelSignup.style.display = 'none';
+  }
+  function showSignup(){
+    tabSignup.classList.add('active');
+    tabSignin.classList.remove('active');
+    panelSignup.style.display = '';
+    panelSignin.style.display = 'none';
+  }
+  tabSignin.addEventListener('click', showSignin);
+  tabSignup.addEventListener('click', showSignup);
+  document.getElementById('switchToSignup').addEventListener('click', (e) => { e.preventDefault(); showSignup(); });
+  document.getElementById('switchToSignin').addEventListener('click', (e) => { e.preventDefault(); showSignin(); });
+
+  // Password visibility toggle
+  const toggleEye = document.getElementById('toggleEye');
+  const passwordInput = document.getElementById('password');
+  const eyeIcon = document.getElementById('eyeIcon');
+  let visible = false;
+  toggleEye.addEventListener('click', () => {
+    visible = !visible;
+    passwordInput.type = visible ? 'text' : 'password';
+    eyeIcon.innerHTML = visible
+      ? '<path d="M17.94 17.94A10.94 10.94 0 0112 19c-7 0-11-7-11-7a18.4 18.4 0 014.06-5.06M9.9 4.24A10.94 10.94 0 0112 4c7 0 11 7 11 7a18.5 18.5 0 01-2.16 3.19M1 1l22 22M9.5 9.6a3 3 0 004.2 4.2"/>'
+      : '<path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/>';
+  });
+
+  // Simple validation with shake + inline errors
+  const formSignin = document.getElementById('formSignin');
+  const emailInput = document.getElementById('email');
+  const errEmail = document.getElementById('errEmail');
+  const errPass = document.getElementById('errPass');
+  const submitBtn = document.getElementById('submitBtn');
+  const submitLabel = document.getElementById('submitLabel');
+
+  function isValidEmail(v){ return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v); }
+
+  formSignin.addEventListener('submit', (e) => {
+    e.preventDefault();
+    let valid = true;
+
+    if (!isValidEmail(emailInput.value)){
+      errEmail.classList.add('show');
+      emailInput.parentElement.classList.add('shake');
+      valid = false;
+    } else {
+      errEmail.classList.remove('show');
+      emailInput.parentElement.classList.remove('shake');
+    }
+
+    if (passwordInput.value.length < 6){
+      errPass.classList.add('show');
+      passwordInput.parentElement.classList.add('shake');
+      valid = false;
+    } else {
+      errPass.classList.remove('show');
+      passwordInput.parentElement.classList.remove('shake');
+    }
+
+    setTimeout(() => {
+      emailInput.parentElement.classList.remove('shake');
+      passwordInput.parentElement.classList.remove('shake');
+    }, 400);
+
+    if (!valid) return;
+
+    submitLabel.textContent = 'Signing in…';
+    submitBtn.style.opacity = '0.75';
+    submitBtn.disabled = true;
+
+    setTimeout(() => {
+      submitLabel.textContent = 'Signed in ✓';
+      setTimeout(() => {
+        submitLabel.textContent = 'Sign in';
+        submitBtn.style.opacity = '1';
+        submitBtn.disabled = false;
+      }, 1200);
+    }, 1100);
+  });
+
+  document.getElementById('formSignup').addEventListener('submit', (e) => {
+    e.preventDefault();
+    alert('Account created (demo only — wire this up to your auth backend).');
+  });
+</script>
+
+</body>
+</html>

@@ -1,6 +1,7 @@
 import { Quicksand, Nunito } from "next/font/google";
 import "./globals.css";
 import ThemeToggle from "@/components/ThemeToggle";
+import Script from "next/script";
 
 const quicksand = Quicksand({
   variable: "--font-quicksand",
@@ -26,23 +27,25 @@ export default function RootLayout({ children }) {
       className={`${quicksand.variable} ${nunito.variable} h-full antialiased`}
       suppressHydrationWarning
     >
-      <head>
-        {/* Anti-flash theme check script */}
-        <script
+      <head />
+      <body className="min-h-full flex flex-col bg-brand-bg text-brand-text font-sans transition-colors duration-300">
+        <Script
+          id="theme-initializer"
+          strategy="beforeInteractive"
           dangerouslySetInnerHTML={{
             __html: `
               try {
-                if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-                  document.documentElement.classList.add('dark')
+                const theme = localStorage.getItem('theme') || 'default';
+                document.documentElement.setAttribute('data-theme', theme);
+                if (theme === 'wg' || theme === 'wb') {
+                  document.documentElement.classList.remove('dark');
                 } else {
-                  document.documentElement.classList.remove('dark')
+                  document.documentElement.classList.add('dark');
                 }
               } catch (_) {}
             `,
           }}
         />
-      </head>
-      <body className="min-h-full flex flex-col bg-brand-bg text-brand-dark font-sans transition-colors duration-300">
         <ThemeToggle />
         {children}
       </body>

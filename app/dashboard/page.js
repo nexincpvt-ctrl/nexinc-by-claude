@@ -30,7 +30,7 @@ export default async function DashboardPage() {
   }
 
   return (
-    <main className="flex-1 flex flex-col h-screen overflow-hidden">
+    <main className="dashboard-page-body flex-1 flex flex-col h-screen overflow-hidden">
       <DashboardClient initialProfile={profile} />
     </main>
   );

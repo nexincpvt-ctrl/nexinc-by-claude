@@ -3,21 +3,295 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  --brand-bg: #FBF4EC;
-  --brand-dark: #3A332C;
-  --brand-card: #FFFDFB;
-  --brand-primary: #E8794E;
-  --brand-secondary: #8FA888;
-  --brand-error: #D2665A;
-  --brand-success: #6FA37A;
+  --brand-bg: #0F0B0A;          /* Deep dark background */
+  --brand-dark: #F5E6D3;        /* Warm cream borders & typography */
+  --brand-card: #231A17;        /* Card panels */
+  --brand-primary: #F08A5D;     /* Bright neon peach/orange accent */
+  --brand-secondary: #FF9D70;   /* Accent hover */
+  --brand-error: #E55B4C;
+  --brand-success: #52A267;
+  
+  /* Additional SaaS colors */
+  --brand-sec-bg: #1A1412;      /* Sidebar / Header backgrounds */
+  --brand-text: #FFFFFF;        /* High-contrast text */
+  --brand-subtext: #B8AAA3;     /* Muted text */
+
+  /* Default theme geometry and effects */
+  --brand-radius-20: 20px;
+  --brand-radius-15: 15px;
+  --brand-radius-12: 12px;
+  --brand-radius-8: 8px;
+  --brand-border-w: 2px;
+  --brand-shadow-flat-2: 2px 2px 0px 0px rgba(245, 230, 211, 0.15);
+  --brand-shadow-flat-3: 3px 3px 0px 0px rgba(245, 230, 211, 0.15);
+  --brand-shadow-2xl: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  --brand-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+  --brand-shadow-md: 0 4px 6px -2px rgba(0, 0, 0, 0.3);
+  --brand-hover-y: -2px;
+  --brand-active-y: 1px;
+  --brand-glow-35: 0 0 15px rgba(240, 138, 93, 0.35);
+  --brand-glow-30: 0 0 15px rgba(240, 138, 93, 0.3);
+  --brand-glow-25: 0 0 12px rgba(240, 138, 93, 0.25);
+  --brand-glow-15: 0 4px 15px rgba(240, 138, 93, 0.15);
+  --brand-shadow-solid-1: 1px 1px 0px 0px rgba(0, 0, 0, 0.5);
+  --brand-shadow-solid-2: 2px 2px 0px 0px rgba(0, 0, 0, 0.5);
+}
+
+/* Define Theme Variations */
+[data-theme="default"] {
+  --brand-bg: #0f1012;
+  --brand-dark: #2b2d31;
+  --brand-card: #18191c;
+  --brand-primary: #f28c00;
+  --brand-secondary: #ffaa00;
+  --brand-sec-bg: #0b0c0e;
+  --brand-text: #ececf1;
+  --brand-subtext: #9ba1a6;
+  
+  --brand-radius-20: 20px;
+  --brand-radius-15: 15px;
+  --brand-radius-12: 12px;
+  --brand-radius-8: 8px;
+  --brand-border-w: 1px;
+  --brand-shadow-flat-2: 0px 2px 4px rgba(0, 0, 0, 0.35);
+  --brand-shadow-flat-3: 0px 3px 6px rgba(0, 0, 0, 0.35);
+  --brand-shadow-2xl: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  --brand-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+  --brand-shadow-md: 0 4px 6px -2px rgba(0, 0, 0, 0.3);
+  --brand-hover-y: -1px;
+  --brand-active-y: 0px;
+  --brand-glow-35: 0 0 15px rgba(242, 140, 0, 0.35);
+  --brand-glow-30: 0 0 15px rgba(242, 140, 0, 0.3);
+  --brand-glow-25: 0 0 12px rgba(242, 140, 0, 0.25);
+  --brand-glow-15: 0 4px 15px rgba(242, 140, 0, 0.15);
+  --brand-shadow-solid-1: 0px 1px 2px rgba(0, 0, 0, 0.4);
+  --brand-shadow-solid-2: 0px 2px 4px rgba(0, 0, 0, 0.4);
+}
+
+[data-theme="partyrock"] { /* Playful neon gradients and card accents on light background */
+  --brand-bg: #f1f3f6;
+  --brand-dark: #000000;
+  --brand-card: #ffffff;
+  --brand-primary: #8b5cf6;
+  --brand-secondary: #ec4899;
+  --brand-sec-bg: #ffffff;
+  --brand-text: #0f172a;
+  --brand-subtext: #475569;
+  --brand-error: #ef4444;
+  --brand-success: #10b981;
+
+  --brand-radius-20: 16px;
+  --brand-radius-15: 12px;
+  --brand-radius-12: 8px;
+  --brand-radius-8: 4px;
+  --brand-border-w: 2.5px;
+  --brand-shadow-flat-2: 3px 3px 0px 0px #000000;
+  --brand-shadow-flat-3: 4px 4px 0px 0px #000000;
+  --brand-shadow-2xl: 8px 8px 0px 0px #000000;
+  --brand-shadow-lg: 6px 6px 0px 0px #000000;
+  --brand-shadow-md: 4px 4px 0px 0px #000000;
+  --brand-hover-y: -3px;
+  --brand-active-y: 1px;
+  --brand-glow-35: 0px 0px 15px rgba(139, 92, 246, 0.25);
+  --brand-glow-30: 0px 0px 12px rgba(139, 92, 246, 0.2);
+  --brand-glow-25: 4px 4px 0px 0px #000000;
+  --brand-glow-15: 2px 2px 0px 0px #000000;
+  --brand-shadow-solid-1: 1px 1px 0px 0px #000000;
+  --brand-shadow-solid-2: 2px 2px 0px 0px #000000;
+}
+
+[data-theme="bw"] { /* Stark Black & White (Dark Mode base) */
+  --brand-bg: #000000;
+  --brand-dark: #FFFFFF;
+  --brand-card: #000000;
+  --brand-primary: #FFFFFF;
+  --brand-secondary: #FFFFFF;
+  --brand-sec-bg: #000000;
+  --brand-text: #FFFFFF;
+  --brand-subtext: #FFFFFF;
+  --brand-error: #FFFFFF;
+  --brand-success: #FFFFFF;
+
+  /* Stark AWS Partyrock Geometry */
+  --brand-radius-20: 4px;
+  --brand-radius-15: 4px;
+  --brand-radius-12: 2px;
+  --brand-radius-8: 0px;
+  --brand-border-w: 3px;
+  --brand-shadow-flat-2: 3px 3px 0px 0px #FFFFFF;
+  --brand-shadow-flat-3: 4px 4px 0px 0px #FFFFFF;
+  --brand-shadow-2xl: 6px 6px 0px 0px #FFFFFF;
+  --brand-shadow-lg: 4px 4px 0px 0px #FFFFFF;
+  --brand-shadow-md: 3px 3px 0px 0px #FFFFFF;
+  --brand-hover-y: 0px;
+  --brand-active-y: 0px;
+  --brand-glow-35: 4px 4px 0px 0px #FFFFFF;
+  --brand-glow-30: 4px 4px 0px 0px #FFFFFF;
+  --brand-glow-25: 3px 3px 0px 0px #FFFFFF;
+  --brand-glow-15: 2px 2px 0px 0px #FFFFFF;
+  --brand-shadow-solid-1: 1px 1px 0px 0px #FFFFFF;
+  --brand-shadow-solid-2: 2px 2px 0px 0px #FFFFFF;
+}
+
+[data-theme="wb"] { /* Stark White & Black (Light Mode base) */
+  --brand-bg: #FFFFFF;
+  --brand-dark: #000000;
+  --brand-card: #FFFFFF;
+  --brand-primary: #000000;
+  --brand-secondary: #000000;
+  --brand-sec-bg: #FFFFFF;
+  --brand-text: #000000;
+  --brand-subtext: #000000;
+  --brand-error: #000000;
+  --brand-success: #000000;
+
+  /* Stark AWS Partyrock Geometry */
+  --brand-radius-20: 4px;
+  --brand-radius-15: 4px;
+  --brand-radius-12: 2px;
+  --brand-radius-8: 0px;
+  --brand-border-w: 3px;
+  --brand-shadow-flat-2: 3px 3px 0px 0px #000000;
+  --brand-shadow-flat-3: 4px 4px 0px 0px #000000;
+  --brand-shadow-2xl: 6px 6px 0px 0px #000000;
+  --brand-shadow-lg: 4px 4px 0px 0px #000000;
+  --brand-shadow-md: 3px 3px 0px 0px #000000;
+  --brand-hover-y: 0px;
+  --brand-active-y: 0px;
+  --brand-glow-35: 4px 4px 0px 0px #000000;
+  --brand-glow-30: 4px 4px 0px 0px #000000;
+  --brand-glow-25: 3px 3px 0px 0px #000000;
+  --brand-glow-15: 2px 2px 0px 0px #000000;
+  --brand-shadow-solid-1: 1px 1px 0px 0px #000000;
+  --brand-shadow-solid-2: 2px 2px 0px 0px #000000;
+}
+
+[data-theme="wg"] { /* White & Forest Green (Light Mode) */
+  --brand-bg: #FFFFFF;
+  --brand-dark: #1E3F20;
+  --brand-card: #F4FBF4;
+  --brand-primary: #2D6A4F;
+  --brand-secondary: #40916C;
+  --brand-sec-bg: #E8F5E9;
+  --brand-text: #1E3F20;
+  --brand-subtext: #2D6A4F;
+  
+  --brand-radius-20: 24px;
+  --brand-radius-15: 18px;
+  --brand-radius-12: 12px;
+  --brand-radius-8: 8px;
+  --brand-border-w: 2px;
+  --brand-shadow-flat-2: 2px 2px 0px 0px rgba(30, 63, 32, 0.1);
+  --brand-shadow-flat-3: 3px 3px 0px 0px rgba(30, 63, 32, 0.1);
+  --brand-shadow-2xl: 0 20px 40px -15px rgba(30, 63, 32, 0.15);
+  --brand-shadow-lg: 0 10px 20px -10px rgba(30, 63, 32, 0.1);
+  --brand-shadow-md: 0 4px 10px -5px rgba(30, 63, 32, 0.08);
+  --brand-hover-y: -2px;
+  --brand-active-y: 1px;
+  --brand-glow-35: 0 0 15px rgba(45, 106, 79, 0.3);
+  --brand-glow-30: 0 0 12px rgba(45, 106, 79, 0.25);
+  --brand-glow-25: 0 0 10px rgba(45, 106, 79, 0.2);
+  --brand-glow-15: 0 4px 15px rgba(45, 106, 79, 0.12);
+  --brand-shadow-solid-1: 1px 1px 0px 0px rgba(30, 63, 32, 0.1);
+  --brand-shadow-solid-2: 2px 2px 0px 0px rgba(30, 63, 32, 0.1);
+}
+
+[data-theme="cyberpunk"] { /* Cyberpunk Purple & Cyan */
+  --brand-bg: #0A0512;
+  --brand-dark: #00FFFF;
+  --brand-card: #1A0F2E;
+  --brand-primary: #BD00FF;
+  --brand-secondary: #FF007A;
+  --brand-sec-bg: #120921;
+  --brand-text: #FFFFFF;
+  --brand-subtext: #00FFFF;
+  
+  --brand-radius-20: 12px;
+  --brand-radius-15: 8px;
+  --brand-radius-12: 6px;
+  --brand-radius-8: 4px;
+  --brand-border-w: 2px;
+  --brand-shadow-flat-2: 2px 2px 0px 0px rgba(0, 255, 255, 0.2);
+  --brand-shadow-flat-3: 3px 3px 0px 0px rgba(0, 255, 255, 0.2);
+  --brand-shadow-2xl: 0 10px 30px -10px rgba(189, 0, 255, 0.4);
+  --brand-shadow-lg: 0 8px 20px -8px rgba(189, 0, 255, 0.3);
+  --brand-shadow-md: 0 4px 12px -4px rgba(189, 0, 255, 0.2);
+  --brand-hover-y: -2px;
+  --brand-active-y: 1px;
+  --brand-glow-35: 0 0 15px rgba(0, 255, 255, 0.35);
+  --brand-glow-30: 0 0 15px rgba(0, 255, 255, 0.3);
+  --brand-glow-25: 0 0 15px rgba(0, 255, 255, 0.25);
+  --brand-glow-15: 0 4px 15px rgba(0, 255, 255, 0.15);
+  --brand-shadow-solid-1: 1px 1px 0px 0px rgba(0, 255, 255, 0.4);
+  --brand-shadow-solid-2: 2px 2px 0px 0px rgba(0, 255, 255, 0.4);
+}
+
+[data-theme="matrix"] { /* Digital Rain Green */
+  --brand-bg: #000000;
+  --brand-dark: #00FF00;
+  --brand-card: #081408;
+  --brand-primary: #00FF00;
+  --brand-secondary: #33FF33;
+  --brand-sec-bg: #030803;
+  --brand-text: #00FF00;
+  --brand-subtext: #00FF00;
+  
+  --brand-radius-20: 0px;
+  --brand-radius-15: 0px;
+  --brand-radius-12: 0px;
+  --brand-radius-8: 0px;
+  --brand-border-w: 2px;
+  --brand-shadow-flat-2: 2px 2px 0px 0px rgba(0, 255, 0, 0.3);
+  --brand-shadow-flat-3: 3px 3px 0px 0px rgba(0, 255, 0, 0.3);
+  --brand-shadow-2xl: 0 0 20px rgba(0, 255, 0, 0.4);
+  --brand-shadow-lg: 0 0 15px rgba(0, 255, 0, 0.3);
+  --brand-shadow-md: 0 0 10px rgba(0, 255, 0, 0.2);
+  --brand-hover-y: 0px;
+  --brand-active-y: 0px;
+  --brand-glow-35: 0 0 15px rgba(0, 255, 0, 0.35);
+  --brand-glow-30: 0 0 15px rgba(0, 255, 0, 0.30);
+  --brand-glow-25: 0 0 15px rgba(0, 255, 0, 0.25);
+  --brand-glow-15: 0 0 10px rgba(0, 255, 0, 0.15);
+  --brand-shadow-solid-1: 1px 1px 0px 0px rgba(0, 255, 0, 0.5);
+  --brand-shadow-solid-2: 2px 2px 0px 0px rgba(0, 255, 0, 0.5);
+}
+
+[data-theme="retro"] { /* Retro Amber Terminal */
+  --brand-bg: #160F05;
+  --brand-dark: #FFB000;
+  --brand-card: #281D0A;
+  --brand-primary: #FFB000;
+  --brand-secondary: #FFCC00;
+  --brand-sec-bg: #1E1507;
+  --brand-text: #FFB000;
+  --brand-subtext: #FFB000;
+  
+  --brand-radius-20: 8px;
+  --brand-radius-15: 6px;
+  --brand-radius-12: 4px;
+  --brand-radius-8: 2px;
+  --brand-border-w: 2px;
+  --brand-shadow-flat-2: 2px 2px 0px 0px rgba(255, 176, 0, 0.2);
+  --brand-shadow-flat-3: 3px 3px 0px 0px rgba(255, 176, 0, 0.2);
+  --brand-shadow-2xl: 0 0 20px rgba(255, 176, 0, 0.3);
+  --brand-shadow-lg: 0 0 15px rgba(255, 176, 0, 0.25);
+  --brand-shadow-md: 0 0 10px rgba(255, 176, 0, 0.2);
+  --brand-hover-y: -1px;
+  --brand-active-y: 1px;
+  --brand-glow-35: 0 0 15px rgba(255, 176, 0, 0.35);
+  --brand-glow-30: 0 0 15px rgba(255, 176, 0, 0.3);
+  --brand-glow-25: 0 0 15px rgba(255, 176, 0, 0.25);
+  --brand-glow-15: 0 0 10px rgba(255, 176, 0, 0.15);
+  --brand-shadow-solid-1: 1px 1px 0px 0px rgba(255, 176, 0, 0.4);
+  --brand-shadow-solid-2: 2px 2px 0px 0px rgba(255, 176, 0, 0.4);
 }
 
 .dark {
-  --brand-bg: #1A1613;
-  --brand-dark: #F7EFE5;
-  --brand-card: #25201C;
-  --brand-primary: #EE8A63;
-  --brand-secondary: #A0B999;
+  --brand-bg: #0F0B0A;
+  --brand-dark: #F5E6D3;
+  --brand-card: #231A17;
+  --brand-primary: #F08A5D;
+  --brand-secondary: #FF9D70;
 }
 
 @theme {
@@ -28,19 +302,97 @@
   --color-brand-secondary: var(--brand-secondary);
   --color-brand-error: var(--brand-error);
   --color-brand-success: var(--brand-success);
+  --color-brand-sec-bg: var(--brand-sec-bg);
+  --color-brand-text: var(--brand-text);
+  --color-brand-subtext: var(--brand-subtext);
 
   --font-quicksand: var(--font-quicksand);
   --font-nunito: var(--font-nunito);
+
+  /* New responsive properties mapped directly to theme utility classes */
+  --radius-brand-20: var(--brand-radius-20);
+  --radius-brand-15: var(--brand-radius-15);
+  --radius-brand-12: var(--brand-radius-12);
+  --radius-brand-8: var(--brand-radius-8);
+  --border-width-brand-w: var(--brand-border-w);
+  --shadow-brand-2xl: var(--brand-shadow-2xl);
+  --shadow-brand-lg: var(--brand-shadow-lg);
+  --shadow-brand-md: var(--brand-shadow-md);
+  --shadow-brand-flat-2: var(--brand-shadow-flat-2);
+  --shadow-brand-flat-3: var(--brand-shadow-flat-3);
+  --shadow-brand-glow-35: var(--brand-glow-35);
+  --shadow-brand-glow-30: var(--brand-glow-30);
+  --shadow-brand-glow-25: var(--brand-glow-25);
+  --shadow-brand-glow-15: var(--brand-glow-15);
+  --shadow-brand-solid-1: var(--brand-shadow-solid-1);
+  --shadow-brand-solid-2: var(--brand-shadow-solid-2);
 }
 
 body {
   background-color: var(--color-brand-bg);
-  color: var(--color-brand-dark);
-  font-family: var(--font-nunito), system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color: var(--brand-text);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-quicksand), system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  font-weight: 700;
+  font-weight: 800;
+}
+
+/* Premium SaaS Design Classes */
+.premium-rounded {
+  border-radius: var(--brand-radius-20);
+}
+
+.premium-border {
+  border: var(--brand-border-w) solid var(--color-brand-dark);
+}
+
+.premium-border-accent {
+  border: var(--brand-border-w) solid var(--color-brand-primary);
+}
+
+.premium-shadow {
+  box-shadow: var(--brand-shadow-2xl);
+}
+
+.premium-glow {
+  box-shadow: var(--brand-glow-25);
+}
+
+/* Premium hover micro-animations */
+.premium-clickable {
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.premium-clickable:hover {
+  transform: translateY(var(--brand-hover-y));
+  border-color: var(--color-brand-primary);
+  box-shadow: var(--brand-glow-25);
+}
+
+.premium-clickable:active {
+  transform: translateY(var(--brand-active-y));
+  box-shadow: var(--brand-glow-15);
+}
+
+/* Scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--brand-bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--brand-card);
+  border: var(--brand-border-w) solid var(--brand-bg);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-brand-primary);
 }

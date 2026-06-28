@@ -1,0 +1,796 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nexinc — Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0B0D10; --panel:#13161B; --panel-2:#181C22; --panel-3:#0F1216;
+  --border:#262B33; --border-soft:#1E2229;
+  --text:#E9EBEE; --text-dim:#8A919C; --text-faint:#565D68;
+  --signal:#5EE0A8; --signal-dim:#2E5E4C; --signal-glow:rgba(94,224,168,0.35);
+  --warn:#FF6B5C; --code-bg:#0D1014;
+  --research:#5C9DFF; --research-dim:#2C4F94; --research-glow:rgba(92,157,255,0.3);
+  --private:#C792FF; --private-dim:#6B349C; --private-glow:rgba(199,146,255,0.3);
+  --code-accent:#FFB454; --code-accent-dim:#946A21; --code-glow:rgba(255,180,84,0.3);
+  --mono:'JetBrains Mono', monospace; --sans:'Inter', sans-serif;
+}
+*{ margin:0; padding:0; box-sizing:border-box; }
+html,body{ height:100%; }
+body{ background:var(--bg); color:var(--text); font-family:var(--sans); overflow:hidden; -webkit-font-smoothing:antialiased; }
+button{ font-family:inherit; }
+::-webkit-scrollbar{ width:8px; height:8px; }
+::-webkit-scrollbar-thumb{ background:var(--border); border-radius:4px; }
+::-webkit-scrollbar-track{ background:transparent; }
+
+.app{ display:grid; grid-template-columns: 260px 1fr; grid-template-rows: 52px 1fr; height:100vh; width:100vw; }
+
+/* ============ TOPBAR ============ */
+.topbar{ grid-column:1/-1; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid var(--border); background:var(--panel); padding:0 16px; position:relative; z-index:30; }
+.topbar-left{ display:flex; align-items:center; gap:14px; }
+.brand-mini{ display:flex; align-items:center; gap:8px; }
+.brand-mark-sm{ width:18px; height:18px; background:linear-gradient(135deg, var(--signal), var(--signal-dim)); position:relative; flex-shrink:0; }
+.brand-mark-sm::after{ content:''; position:absolute; inset:4px; background:var(--bg); }
+.brand-name-sm{ font-family:var(--mono); font-weight:700; font-size:13px; letter-spacing:0.02em; }
+
+.model-trigger{
+  display:flex; align-items:center; gap:8px; background:var(--panel-2); border:1px solid var(--border);
+  padding:7px 12px; cursor:pointer; font-family:var(--mono); font-size:12.5px; color:var(--text);
+  transition: border-color 0.15s, transform 0.12s;
+}
+.model-trigger:hover{ border-color:var(--signal); transform:translateY(-1px); }
+.model-trigger .model-dot{ width:7px; height:7px; border-radius:50%; background:var(--signal); box-shadow:0 0 6px var(--signal-glow); flex-shrink:0; animation:pulse 2s ease-in-out infinite; }
+@keyframes pulse{ 0%,100%{opacity:1;} 50%{opacity:0.4;} }
+.model-trigger svg.expand{ width:12px; height:12px; color:var(--text-faint); }
+
+.topbar-right{ display:flex; align-items:center; gap:10px; }
+.icon-btn{ width:34px; height:34px; display:flex; align-items:center; justify-content:center; background:transparent; border:1px solid transparent; color:var(--text-dim); cursor:pointer; border-radius:2px; transition: background 0.15s, color 0.15s, border-color 0.15s; }
+.icon-btn:hover{ background:var(--panel-2); border-color:var(--border); color:var(--text); }
+.icon-btn svg{ width:17px; height:17px; }
+.avatar-btn{ width:30px; height:30px; border-radius:2px; background:var(--signal-dim); display:flex; align-items:center; justify-content:center; cursor:pointer; font-family:var(--mono); font-size:12px; font-weight:700; color:var(--signal); border:1px solid var(--border); }
+
+/* ============ SIDEBAR ============ */
+.sidebar{ background:var(--panel); border-right:1px solid var(--border); display:flex; flex-direction:column; overflow:hidden; }
+.sidebar-top{ padding:14px; display:flex; flex-direction:column; gap:8px; }
+.new-chat-btn{ display:flex; align-items:center; justify-content:center; gap:8px; background:var(--signal); color:var(--bg); border:none; font-family:var(--mono); font-weight:700; font-size:12.5px; letter-spacing:0.03em; text-transform:uppercase; padding:10px 0; cursor:pointer; transition: transform 0.12s, box-shadow 0.18s; }
+.new-chat-btn:hover{ box-shadow:0 0 0 1px var(--signal), 0 6px 18px var(--signal-glow); transform:translateY(-1px); }
+
+.search-wrap{ position:relative; }
+.search-wrap input{ width:100%; background:var(--bg); border:1px solid var(--border); color:var(--text); font-size:12.5px; padding:8px 10px 8px 30px; outline:none; font-family:var(--sans); transition: border-color 0.15s; }
+.search-wrap input:focus{ border-color:var(--signal); }
+.search-wrap input::placeholder{ color:var(--text-faint); }
+.search-wrap svg{ position:absolute; left:9px; top:50%; transform:translateY(-50%); width:13px; height:13px; color:var(--text-faint); }
+
+/* ---- SECTION TILES (Research / Private / Codeinc) ---- */
+.section-tiles{ display:flex; flex-direction:column; gap:8px; padding:4px 14px 14px; }
+.section-tile{
+  display:flex; align-items:center; gap:11px; padding:12px 12px;
+  border:1px solid var(--border); background:var(--panel-2); cursor:pointer;
+  border-radius:3px; position:relative; overflow:hidden;
+  transition: border-color 0.18s, transform 0.15s, background 0.18s;
+}
+.section-tile::before{
+  content:''; position:absolute; inset:0; opacity:0; transition:opacity 0.2s;
+  background: radial-gradient(circle at 0% 0%, var(--tile-glow), transparent 70%);
+}
+.section-tile:hover{ transform:translateX(2px); border-color:var(--tile-color); }
+.section-tile:hover::before{ opacity:1; }
+.section-tile.active{ border-color:var(--tile-color); background:var(--panel-3); box-shadow: inset 0 0 0 1px var(--tile-color); }
+.tile-icon{
+  width:34px; height:34px; border-radius:3px; display:flex; align-items:center; justify-content:center;
+  background:var(--tile-color); color:var(--bg); flex-shrink:0; position:relative; z-index:1;
+}
+.tile-icon svg{ width:17px; height:17px; }
+.tile-text{ flex:1; position:relative; z-index:1; }
+.tile-name{ font-family:var(--mono); font-size:12.5px; font-weight:700; letter-spacing:0.02em; color:var(--text); }
+.tile-sub{ font-size:10.5px; color:var(--text-faint); margin-top:1px; }
+.tile-arrow{ color:var(--text-faint); flex-shrink:0; position:relative; z-index:1; transition: transform 0.15s; }
+.section-tile:hover .tile-arrow{ transform:translateX(2px); color:var(--tile-color); }
+
+.tile-research{ --tile-color:var(--research); --tile-glow:var(--research-glow); }
+.tile-private{ --tile-color:var(--private); --tile-glow:var(--private-glow); }
+.tile-code{ --tile-color:var(--code-accent); --tile-glow:var(--code-glow); }
+
+.sidebar-scroll{ flex:1; overflow-y:auto; padding:6px 10px 10px; }
+.section-label{ font-family:var(--mono); font-size:10.5px; color:var(--text-faint); text-transform:uppercase; letter-spacing:0.08em; padding:14px 8px 6px; }
+.chat-item{ display:flex; align-items:center; gap:8px; padding:8px 8px; cursor:pointer; border-radius:2px; position:relative; font-size:12.8px; color:var(--text-dim); border:1px solid transparent; }
+.chat-item:hover{ background:var(--panel-2); color:var(--text); }
+.chat-item.active{ background:var(--panel-2); color:var(--text); border-color:var(--border); }
+.chat-item.active::before{ content:''; position:absolute; left:0; top:8px; bottom:8px; width:2px; background:var(--signal); }
+.chat-item .ci-title{ flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.chat-item .ci-icon{ width:13px; height:13px; flex-shrink:0; color:var(--text-faint); }
+
+.sidebar-bottom{ border-top:1px solid var(--border); padding:12px 14px; font-family:var(--mono); font-size:11px; color:var(--text-faint); }
+.usage-bar{ width:100%; height:3px; background:var(--border); border-radius:2px; overflow:hidden; margin-top:6px; }
+.usage-fill{ height:100%; background:var(--signal); width:34%; }
+
+/* ============ WORKSPACE CONTAINER ============ */
+.workspace{ position:relative; overflow:hidden; background:var(--bg); }
+.view{ position:absolute; inset:0; display:flex; flex-direction:column; opacity:0; pointer-events:none; transform:scale(0.98); transition: opacity 0.25s ease, transform 0.25s ease; }
+.view.active{ opacity:1; pointer-events:auto; transform:scale(1); }
+
+/* ============ DEFAULT CHAT VIEW ============ */
+.chat-scroll{ flex:1; overflow-y:auto; padding:28px 0 12px; }
+.chat-inner{ max-width:720px; margin:0 auto; padding:0 24px; display:flex; flex-direction:column; gap:26px; }
+.empty-state{ height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:18px; padding:0 24px; text-align:center; }
+.empty-node{ width:64px; height:64px; position:relative; perspective:600px; }
+.empty-node .ecube{ width:100%; height:100%; position:relative; transform-style:preserve-3d; transform: rotateX(55deg) rotateZ(45deg); animation: spinSlow 9s linear infinite; }
+@keyframes spinSlow{ from{ transform: rotateX(55deg) rotateZ(45deg); } to{ transform: rotateX(55deg) rotateZ(405deg); } }
+.empty-node .ef{ position:absolute; width:44px; height:44px; border:1px solid rgba(255,255,255,0.08); left:10px; top:10px; }
+.empty-node .et{ background:linear-gradient(135deg, var(--signal), var(--signal-dim)); transform:translateZ(22px); box-shadow:0 0 20px var(--signal-glow); }
+.empty-node .es{ width:22px; background:var(--signal-dim); transform: rotateY(90deg) translateZ(22px); transform-origin:right; left:32px; opacity:0.7; }
+.empty-node .eb{ height:22px; background:var(--signal-dim); transform: rotateX(-90deg) translateZ(22px); transform-origin:bottom; top:32px; opacity:0.5; }
+.empty-state h2{ font-size:21px; font-weight:600; letter-spacing:-0.01em; }
+.empty-state p{ color:var(--text-dim); font-size:13.5px; max-width:380px; line-height:1.6; }
+.suggest-row{ display:flex; gap:10px; flex-wrap:wrap; justify-content:center; margin-top:8px; }
+.suggest-chip{ border:1px solid var(--border); background:var(--panel-2); color:var(--text-dim); font-size:12px; padding:9px 14px; cursor:pointer; border-radius:2px; transition: border-color 0.15s, color 0.15s, transform 0.12s; }
+.suggest-chip:hover{ border-color:var(--signal); color:var(--text); transform:translateY(-1px); }
+
+.msg{ display:flex; gap:12px; animation: msgIn 0.25s ease; }
+@keyframes msgIn{ from{ opacity:0; transform:translateY(6px); } to{ opacity:1; transform:translateY(0); } }
+.msg-avatar{ width:28px; height:28px; flex-shrink:0; border-radius:2px; display:flex; align-items:center; justify-content:center; font-family:var(--mono); font-size:11px; font-weight:700; }
+.msg.user .msg-avatar{ background:var(--panel-2); color:var(--text-dim); border:1px solid var(--border); }
+.msg.assistant .msg-avatar{ background:linear-gradient(135deg, var(--signal), var(--signal-dim)); color:var(--bg); }
+.msg-body{ flex:1; min-width:0; padding-top:3px; }
+.msg-name{ font-family:var(--mono); font-size:11px; color:var(--text-faint); margin-bottom:5px; text-transform:uppercase; letter-spacing:0.04em; }
+.msg-text{ font-size:14.5px; line-height:1.65; color:var(--text); }
+.msg-text p{ margin-bottom:10px; }
+.msg-text p:last-child{ margin-bottom:0; }
+.typing-dots{ display:flex; gap:4px; padding:6px 0; }
+.typing-dots span{ width:6px; height:6px; border-radius:50%; background:var(--text-faint); animation: tdBounce 1.2s ease-in-out infinite; }
+.typing-dots span:nth-child(2){ animation-delay:0.15s; }
+.typing-dots span:nth-child(3){ animation-delay:0.3s; }
+@keyframes tdBounce{ 0%,60%,100%{ transform:translateY(0); opacity:0.4; } 30%{ transform:translateY(-4px); opacity:1; } }
+
+.composer-wrap{ padding:14px 24px 20px; }
+.composer{ max-width:720px; margin:0 auto; background:var(--panel-2); border:1px solid var(--border); border-radius:4px; transition: border-color 0.18s, box-shadow 0.18s; display:flex; flex-direction:column; }
+.composer:focus-within{ border-color:var(--signal); box-shadow:0 0 0 3px var(--signal-glow); }
+.composer textarea{ width:100%; background:transparent; border:none; outline:none; resize:none; color:var(--text); font-family:var(--sans); font-size:14px; line-height:1.5; padding:14px 14px 6px; max-height:200px; }
+.composer textarea::placeholder{ color:var(--text-faint); }
+.composer-toolbar{ display:flex; align-items:center; justify-content:space-between; padding:6px 10px 10px; }
+.send-btn{ width:32px; height:32px; border-radius:2px; background:var(--signal); border:none; display:flex; align-items:center; justify-content:center; cursor:pointer; color:var(--bg); transition: transform 0.12s, box-shadow 0.18s; }
+.send-btn:hover{ box-shadow:0 0 0 1px var(--signal), 0 4px 14px var(--signal-glow); transform:translateY(-1px); }
+.send-btn svg{ width:15px; height:15px; }
+.composer-hint{ text-align:center; font-size:11px; color:var(--text-faint); margin-top:8px; font-family:var(--mono); }
+.icon-mini{ width:32px; height:32px; display:flex; align-items:center; justify-content:center; background:transparent; border:none; color:var(--text-faint); cursor:pointer; border-radius:2px; }
+.icon-mini:hover{ background:var(--panel-3); color:var(--text); }
+.icon-mini svg{ width:15px; height:15px; }
+
+/* ============ WORKSPACE HEADER (shared by Research/Private/Code) ============ */
+.ws-header{ display:flex; align-items:center; justify-content:space-between; padding:18px 28px; border-bottom:1px solid var(--ws-color); background: linear-gradient(180deg, var(--ws-tint), transparent); }
+.ws-header-left{ display:flex; align-items:center; gap:14px; }
+.ws-icon-big{ width:42px; height:42px; border-radius:4px; background:var(--ws-color); color:var(--bg); display:flex; align-items:center; justify-content:center; box-shadow:0 0 24px var(--ws-glow); }
+.ws-icon-big svg{ width:21px; height:21px; }
+.ws-title{ font-family:var(--mono); font-size:16px; font-weight:700; letter-spacing:0.01em; }
+.ws-subtitle{ font-size:12px; color:var(--text-dim); margin-top:2px; }
+.ws-back{ display:flex; align-items:center; gap:6px; background:var(--panel-2); border:1px solid var(--border); color:var(--text-dim); font-family:var(--mono); font-size:11.5px; padding:8px 12px; cursor:pointer; border-radius:2px; transition: border-color 0.15s, color 0.15s; }
+.ws-back:hover{ border-color:var(--ws-color); color:var(--text); }
+.ws-back svg{ width:13px; height:13px; }
+
+/* ===== RESEARCH WORKSPACE ===== */
+#viewResearch{ --ws-color:var(--research); --ws-tint:rgba(92,157,255,0.08); --ws-glow:var(--research-glow); }
+.research-body{ flex:1; display:grid; grid-template-columns: 1fr 360px; overflow:hidden; }
+.research-main{ overflow-y:auto; padding:22px 28px; }
+.research-input-row{ display:flex; gap:10px; margin-bottom:20px; }
+.research-input-row input{ flex:1; background:var(--panel-2); border:1px solid var(--border); color:var(--text); font-size:14px; padding:12px 14px; outline:none; border-radius:3px; transition:border-color .15s; }
+.research-input-row input:focus{ border-color:var(--research); }
+.research-go{ background:var(--research); color:var(--bg); border:none; font-family:var(--mono); font-weight:700; font-size:12px; text-transform:uppercase; padding:0 18px; cursor:pointer; border-radius:3px; transition: box-shadow .18s, transform .12s; }
+.research-go:hover{ box-shadow:0 0 0 1px var(--research), 0 6px 18px var(--research-glow); transform:translateY(-1px); }
+
+.research-status{ display:flex; align-items:center; gap:10px; font-family:var(--mono); font-size:12px; color:var(--text-dim); margin-bottom:18px; }
+.research-status .rdot{ width:7px; height:7px; border-radius:50%; background:var(--research); animation:pulse 1.2s ease-in-out infinite; }
+.research-steps{ display:flex; flex-direction:column; gap:10px; margin-bottom:24px; }
+.research-step{ display:flex; align-items:center; gap:10px; font-size:13px; color:var(--text-faint); opacity:0.4; transition: opacity .3s; }
+.research-step.done{ opacity:1; color:var(--text-dim); }
+.research-step.active{ opacity:1; color:var(--text); }
+.research-step .step-check{ width:16px; height:16px; border-radius:50%; border:1px solid var(--border); flex-shrink:0; display:flex; align-items:center; justify-content:center; }
+.research-step.done .step-check{ background:var(--research); border-color:var(--research); }
+.research-step.done .step-check svg{ width:9px; height:9px; color:var(--bg); }
+
+.research-findings h3{ font-size:14px; margin-bottom:10px; font-weight:600; }
+.research-findings p{ font-size:13.5px; line-height:1.7; color:var(--text-dim); margin-bottom:12px; }
+.cite-chip{ display:inline-flex; align-items:center; gap:3px; font-family:var(--mono); font-size:10.5px; background:var(--panel-2); border:1px solid var(--border); color:var(--research); padding:1px 6px; border-radius:8px; margin-left:3px; cursor:pointer; vertical-align:middle; }
+
+.research-sidebar{ border-left:1px solid var(--border); background:var(--panel); overflow-y:auto; padding:18px; }
+.research-sidebar h4{ font-family:var(--mono); font-size:11px; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-faint); margin-bottom:12px; }
+.source-card{ border:1px solid var(--border); background:var(--panel-2); padding:11px; border-radius:3px; cursor:pointer; transition: border-color .15s, transform .12s; margin-bottom:10px; }
+.source-card:hover{ border-color:var(--research); transform:translateX(2px); }
+.source-card .sc-domain{ font-family:var(--mono); font-size:10.5px; color:var(--research); margin-bottom:4px; }
+.source-card .sc-title{ font-size:12.5px; color:var(--text); margin-bottom:4px; line-height:1.4; font-weight:500; }
+.source-card .sc-snippet{ font-size:11.5px; color:var(--text-faint); line-height:1.5; }
+
+/* ===== PRIVATE WORKSPACE ===== */
+#viewPrivate{ --ws-color:var(--private); --ws-tint:rgba(199,146,255,0.08); --ws-glow:var(--private-glow); }
+.private-body{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:40px; text-align:center; gap:16px; }
+.private-shield{ width:72px; height:72px; border-radius:50%; background:var(--panel-2); border:1.5px solid var(--private); display:flex; align-items:center; justify-content:center; box-shadow:0 0 30px var(--private-glow); animation: shieldPulse 3s ease-in-out infinite; }
+@keyframes shieldPulse{ 0%,100%{ box-shadow:0 0 20px var(--private-glow); } 50%{ box-shadow:0 0 40px var(--private-glow); } }
+.private-shield svg{ width:34px; height:34px; color:var(--private); }
+.private-body h2{ font-size:20px; font-weight:600; }
+.private-body p{ color:var(--text-dim); font-size:13.5px; max-width:420px; line-height:1.6; }
+.private-feature-list{ display:flex; flex-direction:column; gap:10px; margin-top:8px; text-align:left; width:100%; max-width:420px; }
+.priv-feature{ display:flex; gap:10px; align-items:flex-start; font-size:12.5px; color:var(--text-dim); }
+.priv-feature svg{ width:14px; height:14px; color:var(--private); flex-shrink:0; margin-top:2px; }
+.private-cta{ margin-top:14px; background:var(--private); color:#1A0F26; border:none; font-family:var(--mono); font-weight:700; font-size:12.5px; text-transform:uppercase; padding:12px 24px; cursor:pointer; border-radius:3px; transition: box-shadow .18s, transform .12s; }
+.private-cta:hover{ box-shadow:0 0 0 1px var(--private), 0 8px 24px var(--private-glow); transform:translateY(-1px); }
+
+.private-active-chat{ display:none; flex:1; flex-direction:column; overflow:hidden; }
+.private-active-chat.show{ display:flex; }
+.private-chat-scroll{ flex:1; overflow-y:auto; padding:24px 28px; max-width:680px; margin:0 auto; width:100%; }
+.private-banner{ display:flex; align-items:center; gap:8px; background:rgba(199,146,255,0.08); border:1px solid var(--private-dim); color:var(--private); font-family:var(--mono); font-size:11px; padding:8px 14px; border-radius:3px; margin-bottom:18px; }
+.private-banner svg{ width:13px; height:13px; }
+
+/* ===== CODEINC WORKSPACE ===== */
+#viewCode{ --ws-color:var(--code-accent); --ws-tint:rgba(255,180,84,0.08); --ws-glow:var(--code-glow); }
+.code-body{ flex:1; display:grid; grid-template-columns: 220px 1fr; overflow:hidden; }
+.file-tree{ border-right:1px solid var(--border); background:var(--panel); padding:14px 10px; overflow-y:auto; }
+.file-tree h4{ font-family:var(--mono); font-size:10.5px; text-transform:uppercase; color:var(--text-faint); letter-spacing:0.06em; padding:4px 8px 10px; }
+.file-row{ display:flex; align-items:center; gap:7px; padding:7px 8px; font-size:12.5px; color:var(--text-dim); cursor:pointer; border-radius:2px; font-family:var(--mono); }
+.file-row:hover{ background:var(--panel-2); color:var(--text); }
+.file-row.active{ background:var(--panel-2); color:var(--code-accent); border-left:2px solid var(--code-accent); padding-left:6px; }
+.file-row svg{ width:13px; height:13px; flex-shrink:0; color:var(--text-faint); }
+.file-row.active svg{ color:var(--code-accent); }
+
+.code-main{ display:flex; flex-direction:column; overflow:hidden; }
+.code-tabs{ display:flex; border-bottom:1px solid var(--border); background:var(--panel-3); }
+.code-tab{ display:flex; align-items:center; gap:7px; padding:10px 16px; font-family:var(--mono); font-size:12px; color:var(--text-faint); border-right:1px solid var(--border); cursor:pointer; }
+.code-tab.active{ background:var(--code-bg); color:var(--text); border-top:2px solid var(--code-accent); margin-top:-1px; }
+.code-editor{ flex:1; overflow-y:auto; background:var(--code-bg); padding:20px 24px; font-family:var(--mono); font-size:13px; line-height:1.75; }
+.code-editor .ln{ color:var(--text-faint); display:inline-block; width:24px; user-select:none; }
+.code-editor .kw{ color:#C792FF; } .code-editor .str{ color:var(--signal); } .code-editor .com{ color:var(--text-faint); } .code-editor .fn{ color:var(--research); } .code-editor .num{ color:var(--code-accent); }
+.code-run-row{ display:flex; align-items:center; justify-content:space-between; padding:10px 20px; border-top:1px solid var(--border); background:var(--panel-3); }
+.run-btn{ display:flex; align-items:center; gap:7px; background:var(--code-accent); color:#241704; border:none; font-family:var(--mono); font-weight:700; font-size:11.5px; text-transform:uppercase; padding:8px 16px; cursor:pointer; border-radius:2px; transition: box-shadow .18s, transform .12s; }
+.run-btn:hover{ box-shadow:0 0 0 1px var(--code-accent), 0 6px 16px var(--code-glow); transform:translateY(-1px); }
+.run-btn svg{ width:12px; height:12px; }
+.run-status{ font-family:var(--mono); font-size:11px; color:var(--text-faint); }
+.code-console{ height:0; overflow:hidden; background:#080A0C; border-top:1px solid var(--border); transition: height .25s ease; font-family:var(--mono); font-size:12px; padding:0 20px; }
+.code-console.open{ height:120px; overflow-y:auto; padding:12px 20px; }
+.code-console .out-line{ color:var(--text-dim); margin-bottom:4px; }
+.code-console .out-ok{ color:var(--signal); }
+
+/* ============ MODEL PICKER MODAL ============ */
+.modal-backdrop{ position:fixed; inset:0; background:rgba(0,0,0,0.65); display:none; align-items:center; justify-content:center; z-index:100; backdrop-filter: blur(3px); }
+.modal-backdrop.show{ display:flex; animation: fadeIn 0.15s ease; }
+@keyframes fadeIn{ from{opacity:0;} to{opacity:1;} }
+
+.model-modal{ width:680px; max-width:92vw; max-height:84vh; background:var(--panel); border:1px solid var(--border); border-radius:6px; overflow:hidden; display:flex; flex-direction:column; box-shadow:0 40px 100px rgba(0,0,0,0.65); animation: modalIn 0.22s ease; }
+@keyframes modalIn{ from{ opacity:0; transform:scale(0.96) translateY(10px); } to{ opacity:1; transform:scale(1) translateY(0); } }
+.mm-head{ padding:22px 24px 16px; border-bottom:1px solid var(--border); }
+.mm-head h2{ font-size:18px; font-weight:700; margin-bottom:4px; }
+.mm-head p{ font-size:12.5px; color:var(--text-dim); }
+.mm-close{ position:absolute; top:18px; right:18px; background:none; border:none; color:var(--text-faint); cursor:pointer; padding:4px; }
+.mm-close:hover{ color:var(--text); }
+
+.mm-grid{ padding:20px 24px 24px; display:grid; grid-template-columns:1fr 1fr; gap:12px; overflow-y:auto; }
+.model-card{ position:relative; border:1px solid var(--border); background:var(--panel-2); border-radius:5px; padding:16px; cursor:pointer; overflow:hidden; transition: border-color .18s, transform .15s, box-shadow .18s; }
+.model-card::before{ content:''; position:absolute; inset:0; opacity:0; transition:opacity .25s; background: radial-gradient(circle at 100% 0%, var(--mc-glow), transparent 65%); }
+.model-card:hover{ transform:translateY(-3px); border-color:var(--mc-color); box-shadow:0 12px 28px rgba(0,0,0,0.4); }
+.model-card:hover::before{ opacity:1; }
+.model-card.selected{ border-color:var(--mc-color); box-shadow:0 0 0 1px var(--mc-color), 0 0 24px var(--mc-glow); }
+.model-card.locked{ cursor:not-allowed; opacity:0.55; }
+.model-card.locked:hover{ transform:none; box-shadow:none; }
+
+.mc-top{ display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:12px; position:relative; z-index:1; }
+.mc-icon{ width:38px; height:38px; border-radius:5px; display:flex; align-items:center; justify-content:center; font-family:var(--mono); font-size:14px; font-weight:800; background:var(--mc-color); color:var(--bg); }
+.model-card.locked .mc-icon{ background:var(--panel-3); color:var(--text-faint); border:1px solid var(--border); }
+.mc-badge{ font-family:var(--mono); font-size:9px; letter-spacing:0.06em; text-transform:uppercase; padding:3px 7px; border-radius:8px; }
+.mc-badge.live{ background:rgba(94,224,168,0.15); color:var(--signal); border:1px solid var(--signal-dim); }
+.mc-badge.soon{ background:var(--panel-3); color:var(--text-faint); border:1px solid var(--border); }
+
+.mc-name{ font-size:14.5px; font-weight:700; margin-bottom:3px; position:relative; z-index:1; }
+.mc-desc{ font-size:11.5px; color:var(--text-faint); margin-bottom:12px; line-height:1.4; position:relative; z-index:1; }
+.mc-tags{ display:flex; gap:6px; flex-wrap:wrap; position:relative; z-index:1; }
+.mc-tag{ font-family:var(--mono); font-size:9.5px; color:var(--text-dim); background:var(--panel-3); border:1px solid var(--border-soft); padding:2px 7px; border-radius:3px; }
+.mc-check{ position:absolute; top:14px; right:14px; width:18px; height:18px; border-radius:50%; background:var(--mc-color); display:flex; align-items:center; justify-content:center; opacity:0; transition:opacity .15s; z-index:2; }
+.model-card.selected .mc-check{ opacity:1; }
+.mc-check svg{ width:10px; height:10px; color:var(--bg); }
+
+.mc-gemini{ --mc-color:var(--signal); --mc-glow:var(--signal-glow); }
+.mc-gpt{ --mc-color:#7CB4FF; --mc-glow:rgba(124,180,255,0.25); }
+.mc-claude{ --mc-color:#FFB454; --mc-glow:rgba(255,180,84,0.25); }
+.mc-llama{ --mc-color:#5C9DFF; --mc-glow:rgba(92,157,255,0.25); }
+.mc-mistral{ --mc-color:#FF8A65; --mc-glow:rgba(255,138,101,0.25); }
+.mc-grok{ --mc-color:#C792FF; --mc-glow:rgba(199,146,255,0.25); }
+
+@media (max-width: 980px){
+  .app{ grid-template-columns: 0 1fr; }
+  .sidebar{ position:fixed; left:0; top:52px; bottom:0; width:260px; z-index:60; transform:translateX(-100%); transition: transform .2s; }
+  .sidebar.mobile-open{ transform:translateX(0); }
+  .research-body, .code-body{ grid-template-columns: 1fr; }
+  .research-sidebar, .file-tree{ display:none; }
+  .mm-grid{ grid-template-columns:1fr; }
+}
+@media (prefers-reduced-motion: reduce){ *{ animation-duration:0.01ms !important; animation-iteration-count:1 !important; } }
+</style>
+</head>
+<body>
+
+<div class="app" id="app">
+
+  <!-- TOPBAR -->
+  <div class="topbar">
+    <div class="topbar-left">
+      <button class="icon-btn" id="sidebarToggle" aria-label="Toggle sidebar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="1"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+      </button>
+      <div class="brand-mini">
+        <div class="brand-mark-sm"></div>
+        <div class="brand-name-sm">NEXINC</div>
+      </div>
+    </div>
+
+    <div class="topbar-right">
+      <button class="model-trigger" id="modelTrigger">
+        <div class="model-dot"></div>
+        <span id="modelLabel">Gemini 2.5 Pro</span>
+        <svg class="expand" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/></svg>
+      </button>
+      <button class="icon-btn" id="settingsBtn" title="Settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33h0a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51h0a1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82v0a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+      </button>
+      <div class="avatar-btn">L</div>
+    </div>
+  </div>
+
+  <!-- SIDEBAR -->
+  <div class="sidebar" id="sidebar">
+    <div class="sidebar-top">
+      <button class="new-chat-btn" id="newChatBtn">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        New chat
+      </button>
+      <div class="search-wrap">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" placeholder="Search chats…">
+      </div>
+    </div>
+
+    <!-- BIG SECTION TILES -->
+    <div class="section-tiles">
+      <div class="section-tile tile-research" id="tileResearch">
+        <div class="tile-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></div>
+        <div class="tile-text"><div class="tile-name">RESEARCH</div><div class="tile-sub">Live sources & citations</div></div>
+        <svg class="tile-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+      </div>
+      <div class="section-tile tile-private" id="tilePrivate">
+        <div class="tile-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg></div>
+        <div class="tile-text"><div class="tile-name">PRIVATE</div><div class="tile-sub">Encrypted, no training</div></div>
+        <svg class="tile-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+      </div>
+      <div class="section-tile tile-code" id="tileCode">
+        <div class="tile-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></div>
+        <div class="tile-text"><div class="tile-name">CODEINC</div><div class="tile-sub">Editor, run & inspect</div></div>
+        <svg class="tile-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+      </div>
+    </div>
+
+    <div class="sidebar-scroll">
+      <div class="section-label">Today</div>
+      <div class="chat-item active" data-view="viewChat">
+        <svg class="ci-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+        <span class="ci-title">New conversation</span>
+      </div>
+      <div class="chat-item" data-view="viewChat">
+        <svg class="ci-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+        <span class="ci-title">Explain transformer attention</span>
+      </div>
+      <div class="section-label">Yesterday</div>
+      <div class="chat-item" data-view="viewChat">
+        <svg class="ci-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+        <span class="ci-title">Debug Next.js hydration error</span>
+      </div>
+    </div>
+
+    <div class="sidebar-bottom">
+      <div style="display:flex; justify-content:space-between;"><span>34 / 100 msgs</span><span>Free</span></div>
+      <div class="usage-bar"><div class="usage-fill"></div></div>
+    </div>
+  </div>
+
+  <!-- WORKSPACE (swappable views) -->
+  <div class="workspace" id="workspace">
+
+    <!-- ===== DEFAULT CHAT VIEW ===== -->
+    <div class="view active" id="viewChat">
+      <div class="chat-scroll" id="chatScroll">
+        <div class="empty-state" id="emptyState">
+          <div class="empty-node">
+            <div class="ecube"><div class="ef et"></div><div class="ef es"></div><div class="ef eb"></div></div>
+          </div>
+          <h2>What are we building today?</h2>
+          <p>Ask anything — or open Research, Private, or Codeinc from the sidebar for a dedicated workspace.</p>
+          <div class="suggest-row">
+            <button class="suggest-chip" data-prompt="Help me draft a cold outreach email">Draft a message</button>
+            <button class="suggest-chip" data-prompt="Explain how isometric CSS transforms work">Explain a concept</button>
+            <button class="suggest-chip" data-prompt="What should I name my new side project?">Brainstorm ideas</button>
+          </div>
+        </div>
+        <div class="chat-inner" id="chatInner" style="display:none;"></div>
+      </div>
+      <div class="composer-wrap">
+        <div class="composer" id="composer">
+          <textarea id="composerInput" placeholder="Message Nexinc…" rows="1"></textarea>
+          <div class="composer-toolbar">
+            <div style="display:flex; gap:4px;">
+              <button class="icon-mini" title="Attach file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg></button>
+              <button class="icon-mini" title="Voice input"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg></button>
+            </div>
+            <button class="send-btn" id="sendBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
+          </div>
+        </div>
+        <div class="composer-hint">Nexinc can make mistakes. Verify important information.</div>
+      </div>
+    </div>
+
+    <!-- ===== RESEARCH WORKSPACE ===== -->
+    <div class="view" id="viewResearch">
+      <div class="ws-header">
+        <div class="ws-header-left">
+          <div class="ws-icon-big"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></div>
+          <div><div class="ws-title">Research</div><div class="ws-subtitle">Searches the live web and grounds answers in sources</div></div>
+        </div>
+        <button class="ws-back" data-back><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>Back to chat</button>
+      </div>
+      <div class="research-body">
+        <div class="research-main">
+          <div class="research-input-row">
+            <input type="text" id="researchQuery" placeholder="What do you want researched?" value="Latest trends in solid-state batteries">
+            <button class="research-go" id="researchGo">Research</button>
+          </div>
+
+          <div class="research-status" id="researchStatus" style="display:none;">
+            <div class="rdot"></div> Researching — scanning sources across the web
+          </div>
+          <div class="research-steps" id="researchSteps" style="display:none;">
+            <div class="research-step" data-step="0"><div class="step-check"></div> Parsing query intent</div>
+            <div class="research-step" data-step="1"><div class="step-check"></div> Searching 24 sources</div>
+            <div class="research-step" data-step="2"><div class="step-check"></div> Cross-checking claims</div>
+            <div class="research-step" data-step="3"><div class="step-check"></div> Drafting grounded answer</div>
+          </div>
+
+          <div class="research-findings" id="researchFindings" style="display:none;">
+            <h3>Summary</h3>
+            <p>Three throughlines stand out across recent coverage: rising energy density from new cathode chemistries <span class="cite-chip">1</span>, a shift toward sulfide-based solid electrolytes for better safety <span class="cite-chip">2</span>, and early but real progress on manufacturing scale-up <span class="cite-chip">3</span>.</p>
+            <p>Most analysts still peg mass-market EV adoption several years out, with current deployment concentrated in premium vehicle tiers and consumer electronics pilots <span class="cite-chip">4</span>.</p>
+          </div>
+        </div>
+        <div class="research-sidebar">
+          <h4>Sources</h4>
+          <div id="sourceCards">
+            <div class="source-card"><div class="sc-domain">reuters.com</div><div class="sc-title">Battery makers race to scale solid-state production</div><div class="sc-snippet">Coverage of manufacturing pilots moving from lab to limited production lines.</div></div>
+            <div class="source-card"><div class="sc-domain">nature.com</div><div class="sc-title">Sulfide electrolytes show improved thermal stability</div><div class="sc-snippet">Peer-reviewed comparison of electrolyte chemistries and safety margins.</div></div>
+            <div class="source-card"><div class="sc-domain">techcrunch.com</div><div class="sc-title">Why solid-state batteries keep missing deadlines</div><div class="sc-snippet">Analysis of the gap between lab breakthroughs and shippable products.</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== PRIVATE WORKSPACE ===== -->
+    <div class="view" id="viewPrivate">
+      <div class="ws-header">
+        <div class="ws-header-left">
+          <div class="ws-icon-big"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg></div>
+          <div><div class="ws-title">Private</div><div class="ws-subtitle">Encrypted client-side · excluded from training</div></div>
+        </div>
+        <button class="ws-back" data-back><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>Back to chat</button>
+      </div>
+
+      <div class="private-body" id="privateIntro">
+        <div class="private-shield"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg></div>
+        <h2>Start a private conversation</h2>
+        <p>Private chats are encrypted on your device, never used for model training, and only ever appear in this Private section — not in your regular history.</p>
+        <div class="private-feature-list">
+          <div class="priv-feature"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> No training, no retention beyond this session</div>
+          <div class="priv-feature"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Doesn't sync to other devices automatically</div>
+          <div class="priv-feature"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Stored separately from your regular chat history</div>
+        </div>
+        <button class="private-cta" id="startPrivateBtn">Start private chat</button>
+      </div>
+
+      <div class="private-active-chat" id="privateActiveChat">
+        <div class="private-chat-scroll">
+          <div class="private-banner"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg> This conversation is private and encrypted</div>
+          <div id="privateChatInner" style="display:flex; flex-direction:column; gap:22px;"></div>
+        </div>
+        <div class="composer-wrap">
+          <div class="composer">
+            <textarea id="privateInput" placeholder="Message privately…" rows="1"></textarea>
+            <div class="composer-toolbar">
+              <div></div>
+              <button class="send-btn" id="privateSendBtn" style="background:var(--private);"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
+            </div>
+          </div>
+          <div class="composer-hint">Encrypted · not used for training</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== CODEINC WORKSPACE ===== -->
+    <div class="view" id="viewCode">
+      <div class="ws-header">
+        <div class="ws-header-left">
+          <div class="ws-icon-big"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></div>
+          <div><div class="ws-title">Codeinc</div><div class="ws-subtitle">Generate, edit, and run code in a sandbox</div></div>
+        </div>
+        <button class="ws-back" data-back><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>Back to chat</button>
+      </div>
+      <div class="code-body">
+        <div class="file-tree">
+          <h4>Workspace</h4>
+          <div class="file-row active" data-file="scraper.py"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg> scraper.py</div>
+          <div class="file-row" data-file="utils.py"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg> utils.py</div>
+          <div class="file-row" data-file="requirements.txt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg> requirements.txt</div>
+        </div>
+        <div class="code-main">
+          <div class="code-tabs">
+            <div class="code-tab active">scraper.py</div>
+          </div>
+          <div class="code-editor"><span class="ln">1</span><span class="kw">import</span> requests
+<span class="ln">2</span><span class="kw">from</span> bs4 <span class="kw">import</span> BeautifulSoup
+<span class="ln">3</span>
+<span class="ln">4</span><span class="kw">def</span> <span class="fn">fetch_headlines</span>(url):
+<span class="ln">5</span>    res = requests.get(url, timeout=<span class="num">10</span>)
+<span class="ln">6</span>    soup = BeautifulSoup(res.text, <span class="str">"html.parser"</span>)
+<span class="ln">7</span>    <span class="kw">return</span> [h.get_text() <span class="kw">for</span> h <span class="kw">in</span> soup.select(<span class="str">"h2.headline"</span>)]
+<span class="ln">8</span>
+<span class="ln">9</span><span class="com"># quick test run</span>
+<span class="ln">10</span><span class="kw">if</span> __name__ == <span class="str">"__main__"</span>:
+<span class="ln">11</span>    <span class="kw">for</span> title <span class="kw">in</span> fetch_headlines(<span class="str">"https://example-news.com"</span>):
+<span class="ln">12</span>        <span class="fn">print</span>(title)</div>
+          <div class="code-run-row">
+            <button class="run-btn" id="runBtn"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg> Run</button>
+            <span class="run-status" id="runStatus">Sandbox idle</span>
+          </div>
+          <div class="code-console" id="codeConsole">
+            <div class="out-line">$ python scraper.py</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- MODEL PICKER MODAL -->
+<div class="modal-backdrop" id="modelBackdrop">
+  <div class="model-modal">
+    <div class="mm-head">
+      <button class="mm-close" id="closeModelModal"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+      <h2>Choose a model</h2>
+      <p>Switch anytime — your conversation carries over.</p>
+    </div>
+    <div class="mm-grid">
+      <div class="model-card mc-gemini selected" data-model="Gemini 2.5 Pro">
+        <div class="mc-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
+        <div class="mc-top"><div class="mc-icon">G</div><span class="mc-badge live">Live</span></div>
+        <div class="mc-name">Gemini 2.5 Pro</div>
+        <div class="mc-desc">Multimodal reasoning, strong at long-context and code.</div>
+        <div class="mc-tags"><span class="mc-tag">Vision</span><span class="mc-tag">1M ctx</span><span class="mc-tag">Code</span></div>
+      </div>
+      <div class="model-card mc-gpt locked" data-model="GPT-5">
+        <div class="mc-top"><div class="mc-icon">O</div><span class="mc-badge soon">Soon</span></div>
+        <div class="mc-name">GPT-5</div>
+        <div class="mc-desc">OpenAI's flagship general-purpose model.</div>
+        <div class="mc-tags"><span class="mc-tag">Vision</span><span class="mc-tag">Tools</span></div>
+      </div>
+      <div class="model-card mc-claude locked" data-model="Claude Opus">
+        <div class="mc-top"><div class="mc-icon">C</div><span class="mc-badge soon">Soon</span></div>
+        <div class="mc-name">Claude Opus</div>
+        <div class="mc-desc">Anthropic's most capable model for complex reasoning.</div>
+        <div class="mc-tags"><span class="mc-tag">Reasoning</span><span class="mc-tag">Writing</span></div>
+      </div>
+      <div class="model-card mc-llama locked" data-model="Llama 4">
+        <div class="mc-top"><div class="mc-icon">L</div><span class="mc-badge soon">Soon</span></div>
+        <div class="mc-name">Llama 4</div>
+        <div class="mc-desc">Meta's open-weight model, tuned for speed.</div>
+        <div class="mc-tags"><span class="mc-tag">Open</span><span class="mc-tag">Fast</span></div>
+      </div>
+      <div class="model-card mc-mistral locked" data-model="Mistral Large">
+        <div class="mc-top"><div class="mc-icon">M</div><span class="mc-badge soon">Soon</span></div>
+        <div class="mc-name">Mistral Large</div>
+        <div class="mc-desc">Efficient European model, strong multilingual support.</div>
+        <div class="mc-tags"><span class="mc-tag">Multilingual</span></div>
+      </div>
+      <div class="model-card mc-grok locked" data-model="Grok 3">
+        <div class="mc-top"><div class="mc-icon">X</div><span class="mc-badge soon">Soon</span></div>
+        <div class="mc-name">Grok 3</div>
+        <div class="mc-desc">xAI's model with real-time data access.</div>
+        <div class="mc-tags"><span class="mc-tag">Realtime</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  // ---------- Sidebar toggle (mobile) ----------
+  document.getElementById('sidebarToggle').addEventListener('click', () => {
+    document.getElementById('sidebar').classList.toggle('mobile-open');
+  });
+
+  // ---------- View switching ----------
+  const views = document.querySelectorAll('.view');
+  function showView(id){
+    views.forEach(v => v.classList.toggle('active', v.id === id));
+  }
+  document.querySelectorAll('[data-back]').forEach(btn => btn.addEventListener('click', () => showView('viewChat')));
+  document.getElementById('tileResearch').addEventListener('click', () => { showView('viewResearch'); markTileActive('tileResearch'); });
+  document.getElementById('tilePrivate').addEventListener('click', () => { showView('viewPrivate'); markTileActive('tilePrivate'); });
+  document.getElementById('tileCode').addEventListener('click', () => { showView('viewCode'); markTileActive('tileCode'); });
+  document.querySelectorAll('.chat-item').forEach(item => {
+    item.addEventListener('click', () => {
+      document.querySelectorAll('.chat-item').forEach(i => i.classList.remove('active'));
+      item.classList.add('active');
+      showView(item.dataset.view || 'viewChat');
+      markTileActive(null);
+    });
+  });
+  function markTileActive(id){
+    document.querySelectorAll('.section-tile').forEach(t => t.classList.toggle('active', t.id === id));
+  }
+
+  // ---------- Model picker modal ----------
+  const modelTrigger = document.getElementById('modelTrigger');
+  const modelBackdrop = document.getElementById('modelBackdrop');
+  const modelLabel = document.getElementById('modelLabel');
+  modelTrigger.addEventListener('click', () => modelBackdrop.classList.add('show'));
+  document.getElementById('closeModelModal').addEventListener('click', () => modelBackdrop.classList.remove('show'));
+  modelBackdrop.addEventListener('click', (e) => { if (e.target === modelBackdrop) modelBackdrop.classList.remove('show'); });
+  document.querySelectorAll('.model-card').forEach(card => {
+    card.addEventListener('click', () => {
+      if (card.classList.contains('locked')){
+        card.style.animation = 'none'; card.offsetHeight; card.style.animation = 'shakeSm 0.4s';
+        return;
+      }
+      document.querySelectorAll('.model-card').forEach(c => c.classList.remove('selected'));
+      card.classList.add('selected');
+      modelLabel.textContent = card.dataset.model;
+      setTimeout(() => modelBackdrop.classList.remove('show'), 220);
+    });
+  });
+
+  // ---------- Default chat logic ----------
+  const emptyState = document.getElementById('emptyState');
+  const chatInner = document.getElementById('chatInner');
+  const chatScroll = document.getElementById('chatScroll');
+  const composerInput = document.getElementById('composerInput');
+  const sendBtn = document.getElementById('sendBtn');
+
+  function escapeHtml(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+  function addMsg(container, who, text, scrollEl){
+    const div = document.createElement('div');
+    div.className = 'msg ' + who;
+    div.innerHTML = `
+      <div class="msg-avatar">${who === 'user' ? 'L' : 'N'}</div>
+      <div class="msg-body">
+        <div class="msg-name">${who === 'user' ? 'You' : 'Nexinc'}</div>
+        <div class="msg-text"><p>${escapeHtml(text)}</p></div>
+      </div>`;
+    container.appendChild(div);
+    scrollEl.scrollTop = scrollEl.scrollHeight;
+    return div;
+  }
+  function addTyping(container, scrollEl){
+    const div = document.createElement('div');
+    div.className = 'msg assistant';
+    div.innerHTML = `<div class="msg-avatar">N</div><div class="msg-body"><div class="msg-name">Nexinc</div><div class="typing-dots"><span></span><span></span><span></span></div></div>`;
+    container.appendChild(div);
+    scrollEl.scrollTop = scrollEl.scrollHeight;
+    return div;
+  }
+
+  function handleSend(){
+    const text = composerInput.value.trim();
+    if (!text) return;
+    if (emptyState.style.display !== 'none'){ emptyState.style.display = 'none'; chatInner.style.display = 'flex'; }
+    addMsg(chatInner, 'user', text, chatScroll);
+    composerInput.value = ''; composerInput.style.height = 'auto';
+    const typing = addTyping(chatInner, chatScroll);
+    setTimeout(() => {
+      typing.remove();
+      addMsg(chatInner, 'assistant', "Here's a thought on that — happy to go deeper into any part of it.", chatScroll);
+    }, 1200);
+  }
+  sendBtn.addEventListener('click', handleSend);
+  composerInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); handleSend(); } });
+  composerInput.addEventListener('input', () => { composerInput.style.height = 'auto'; composerInput.style.height = Math.min(composerInput.scrollHeight, 200) + 'px'; });
+
+  document.querySelectorAll('.suggest-chip').forEach(chip => {
+    chip.addEventListener('click', () => { composerInput.value = chip.dataset.prompt; handleSend(); });
+  });
+  document.getElementById('newChatBtn').addEventListener('click', () => {
+    chatInner.innerHTML = ''; chatInner.style.display = 'none'; emptyState.style.display = 'flex';
+    showView('viewChat'); markTileActive(null);
+  });
+
+  // ---------- Research workspace logic ----------
+  const researchGo = document.getElementById('researchGo');
+  const researchStatus = document.getElementById('researchStatus');
+  const researchSteps = document.getElementById('researchSteps');
+  const researchFindings = document.getElementById('researchFindings');
+
+  researchGo.addEventListener('click', () => {
+    researchFindings.style.display = 'none';
+    researchStatus.style.display = 'flex';
+    researchSteps.style.display = 'flex';
+    document.querySelectorAll('.research-step').forEach(s => s.classList.remove('done','active'));
+
+    const steps = document.querySelectorAll('.research-step');
+    let i = 0;
+    function advance(){
+      if (i > 0) steps[i-1].classList.remove('active'), steps[i-1].classList.add('done'),
+        steps[i-1].querySelector('.step-check').innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>';
+      if (i < steps.length){
+        steps[i].classList.add('active');
+        i++;
+        setTimeout(advance, 650);
+      } else {
+        researchStatus.style.display = 'none';
+        researchFindings.style.display = 'block';
+      }
+    }
+    advance();
+  });
+
+  // ---------- Private workspace logic ----------
+  const startPrivateBtn = document.getElementById('startPrivateBtn');
+  const privateIntro = document.getElementById('privateIntro');
+  const privateActiveChat = document.getElementById('privateActiveChat');
+  const privateChatInner = document.getElementById('privateChatInner');
+  const privateChatScroll = document.querySelector('.private-chat-scroll');
+  const privateInput = document.getElementById('privateInput');
+  const privateSendBtn = document.getElementById('privateSendBtn');
+
+  startPrivateBtn.addEventListener('click', () => {
+    privateIntro.style.display = 'none';
+    privateActiveChat.classList.add('show');
+  });
+  function handlePrivateSend(){
+    const text = privateInput.value.trim();
+    if (!text) return;
+    addMsg(privateChatInner, 'user', text, privateChatScroll);
+    privateInput.value = '';
+    const typing = addTyping(privateChatInner, privateChatScroll);
+    setTimeout(() => {
+      typing.remove();
+      addMsg(privateChatInner, 'assistant', "Got it — this stays in your private, encrypted thread.", privateChatScroll);
+    }, 1100);
+  }
+  privateSendBtn.addEventListener('click', handlePrivateSend);
+  privateInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); handlePrivateSend(); } });
+
+  // ---------- Codeinc workspace logic ----------
+  const runBtn = document.getElementById('runBtn');
+  const runStatus = document.getElementById('runStatus');
+  const codeConsole = document.getElementById('codeConsole');
+  runBtn.addEventListener('click', () => {
+    runStatus.textContent = 'Running…';
+    codeConsole.classList.add('open');
+    codeConsole.innerHTML = '<div class="out-line">$ python scraper.py</div>';
+    setTimeout(() => {
+      codeConsole.innerHTML += '<div class="out-line">Fetching https://example-news.com …</div>';
+    }, 400);
+    setTimeout(() => {
+      codeConsole.innerHTML += '<div class="out-line out-ok">✓ 12 headlines extracted</div>';
+      runStatus.textContent = 'Finished in 0.8s';
+      codeConsole.scrollTop = codeConsole.scrollHeight;
+    }, 1100);
+  });
+  document.querySelectorAll('.file-row').forEach(row => {
+    row.addEventListener('click', () => {
+      document.querySelectorAll('.file-row').forEach(r => r.classList.remove('active'));
+      row.classList.add('active');
+    });
+  });
+
+  // shake keyframe for locked items
+  const styleEl = document.createElement('style');
+  styleEl.textContent = `@keyframes shakeSm{0%,100%{transform:translateX(0);}25%{transform:translateX(-4px);}75%{transform:translateX(4px);}}`;
+  document.head.appendChild(styleEl);
+})();
+</script>
+</body>
+</html>
