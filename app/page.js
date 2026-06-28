@@ -1,10 +1,15 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import "./landing.css";
 
 export default function LandingPage() {
+  const router = useRouter();
+  const [isTransitioning, setIsTransitioning] = useState(false);
+  const [transitionText, setTransitionText] = useState("");
+
   const proceduralCanvasRef = useRef(null);
   const particleCanvasRef = useRef(null);
   const bgVideoRef = useRef(null);
@@ -12,6 +17,15 @@ export default function LandingPage() {
 
   // States for counters
   const [counts, setCounts] = useState([0, 0, 0, 0]);
+
+  const handleTransitionNav = (e, href, message) => {
+    e.preventDefault();
+    setTransitionText(message);
+    setIsTransitioning(true);
+    setTimeout(() => {
+      router.push(href);
+    }, 700);
+  };
 
   useEffect(() => {
     // 1. Procedural Background Animation
@@ -427,7 +441,7 @@ export default function LandingPage() {
             <a href="#terminal">Terminal</a>
           </li>
           <li>
-            <Link href="/pricing">Pricing</Link>
+            <Link href="/pricing" onClick={(e) => handleTransitionNav(e, "/pricing", "LOADING MEMBERSHIP OPTIONS...")}>Pricing</Link>
           </li>
         </ul>
         <div style={{ display: "flex", alignItems: "center", gap: "24px" }}>
@@ -435,7 +449,7 @@ export default function LandingPage() {
             <div className="status-dot"></div>
             US-EAST-1A · 99.98% UPTIME
           </div>
-          <Link href="/login" className="nav-cta">
+          <Link href="/login" className="nav-cta" onClick={(e) => handleTransitionNav(e, "/login", "ESTABLISHING SECURE GATEWAY...")}>
             Sign in
           </Link>
         </div>
@@ -467,10 +481,10 @@ export default function LandingPage() {
         </p>
 
         <div className="hero-actions">
-          <Link href="/signup" className="btn-primary">
+          <Link href="/signup" className="btn-primary" onClick={(e) => handleTransitionNav(e, "/signup", "SPINNING UP CONTAINER INSTANCE...")}>
             Get started free <span className="btn-arrow">→</span>
           </Link>
-          <Link href="/models" className="btn-secondary">
+          <Link href="/models" className="btn-secondary" onClick={(e) => handleTransitionNav(e, "/models", "CONNECTING TO MODEL REGISTRY...")}>
             Browse models
           </Link>
         </div>
@@ -623,6 +637,7 @@ export default function LandingPage() {
               className="model-card"
               onMouseMove={(e) => handleCardMouseMove(e, cardsRef.current[idx])}
               onMouseLeave={() => handleCardMouseLeave(cardsRef.current[idx])}
+              onClick={(e) => handleTransitionNav(e, `/models/${m.key}`, `CONNECTING TO MODEL ${m.name.toUpperCase()} SPECIFICATIONS...`)}
               style={{ textDecoration: "none" }}
             >
               <div className="model-provider">{m.provider}</div>
@@ -763,7 +778,7 @@ export default function LandingPage() {
               No config files, no environment headaches. Pick a model and start
               chatting — or drop to our API for full programmatic control.
             </p>
-            <Link href="/signup" className="btn-primary">
+            <Link href="/signup" className="btn-primary" onClick={(e) => handleTransitionNav(e, "/signup", "SPINNING UP TERMINAL PORT...")}>
               Open terminal <span className="btn-arrow">→</span>
             </Link>
           </div>
@@ -844,6 +859,7 @@ export default function LandingPage() {
               href="/signup"
               className="btn-primary"
               style={{ fontSize: "13px", padding: "18px 48px" }}
+              onClick={(e) => handleTransitionNav(e, "/signup", "INITIALIZING ACCOUNT REGISTRATION...")}
             >
               Create free account <span className="btn-arrow">→</span>
             </Link>
@@ -851,6 +867,7 @@ export default function LandingPage() {
               href="/pricing"
               className="btn-secondary"
               style={{ fontSize: "13px", padding: "18px 48px" }}
+              onClick={(e) => handleTransitionNav(e, "/pricing", "LOADING MEMBERSHIP OPTIONS...")}
             >
               View pricing
             </Link>
@@ -904,6 +921,12 @@ export default function LandingPage() {
           RUNTIME NOMINAL · NODE GEMINI-2.5-PRO
         </div>
       </footer>
+
+      {/* Sleek Page Transition Overlay */}
+      <div className={`transition-overlay ${isTransitioning ? "active" : ""}`}>
+        <div className="transition-spinner"></div>
+        <div className="transition-text">{transitionText}</div>
+      </div>
     </div>
   );
 }
