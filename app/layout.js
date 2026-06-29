@@ -16,8 +16,85 @@ const nunito = Nunito({
 });
 
 export const metadata = {
-  title: "NexInc",
-  description: "Your friendly, unified portal to the world's most powerful AI minds.",
+  metadataBase: new URL("https://nexinc.vercel.app"),
+  title: {
+    default: "NexInc — AI Chat Platform",
+    template: "%s | NexInc",
+  },
+  description:
+    "Your friendly, unified portal to the world's most powerful AI minds. Chat with GPT, Gemini, Claude, Mistral, DeepSeek, and more — all in one place.",
+  keywords: [
+    "AI chat",
+    "GPT",
+    "Gemini",
+    "Claude",
+    "Mistral",
+    "DeepSeek",
+    "AI platform",
+    "NexInc",
+    "unified AI",
+    "chatbot",
+    "LLM",
+    "artificial intelligence",
+  ],
+  authors: [{ name: "NexInc" }],
+  creator: "NexInc",
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-video-preview": -1,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+    },
+  },
+  openGraph: {
+    type: "website",
+    locale: "en_US",
+    url: "https://nexinc.vercel.app",
+    siteName: "NexInc",
+    title: "NexInc — AI Chat Platform",
+    description:
+      "Your friendly, unified portal to the world's most powerful AI minds. Chat with GPT, Gemini, Claude, Mistral, DeepSeek, and more.",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "NexInc — AI Chat Platform",
+    description:
+      "Your friendly, unified portal to the world's most powerful AI minds.",
+  },
+  alternates: {
+    canonical: "https://nexinc.vercel.app",
+  },
+  icons: {
+    icon: "/favicon.ico",
+  },
+};
+
+// JSON-LD Structured Data (Organization + WebSite schemas)
+const jsonLd = {
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "https://nexinc.vercel.app/#organization",
+      name: "NexInc",
+      url: "https://nexinc.vercel.app",
+      description:
+        "A unified AI chat platform providing access to the world's most powerful AI models.",
+    },
+    {
+      "@type": "WebSite",
+      "@id": "https://nexinc.vercel.app/#website",
+      url: "https://nexinc.vercel.app",
+      name: "NexInc",
+      publisher: { "@id": "https://nexinc.vercel.app/#organization" },
+      description:
+        "Chat with GPT, Gemini, Claude, Mistral, DeepSeek, and more — all in one place.",
+    },
+  ],
 };
 
 export default function RootLayout({ children }) {
@@ -27,7 +104,12 @@ export default function RootLayout({ children }) {
       className={`${quicksand.variable} ${nunito.variable} h-full antialiased`}
       suppressHydrationWarning
     >
-      <head />
+      <head>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        />
+      </head>
       <body className="min-h-full flex flex-col bg-brand-bg text-brand-text font-sans transition-colors duration-300">
         <Script
           id="theme-initializer"

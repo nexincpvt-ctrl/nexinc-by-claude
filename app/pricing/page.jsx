@@ -17,6 +17,7 @@ export default function PricingPage() {
   const [loading, setLoading] = useState(true);
   const [checkingOut, setCheckingOut] = useState(false);
   const [loadingPortal, setLoadingPortal] = useState(false);
+  const [fromSettings, setFromSettings] = useState(false);
 
   // Billing Cycle Toggle: 'monthly' or 'yearly'
   const [billingCycle, setBillingCycle] = useState("monthly");
@@ -34,6 +35,15 @@ export default function PricingPage() {
 
   // Accordion FAQ states
   const [openFaqIndex, setOpenFaqIndex] = useState(null);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("from") === "settings") {
+        setFromSettings(true);
+      }
+    }
+  }, []);
 
   useEffect(() => {
     async function loadUser() {
@@ -174,7 +184,10 @@ export default function PricingPage() {
       const res = await fetch("/api/stripe/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ billingCycle }),
+        body: JSON.stringify({
+          billingCycle,
+          cancelUrl: fromSettings ? `${window.location.origin}/pricing?from=settings` : `${window.location.origin}/pricing`
+        }),
       });
       const data = await res.json();
       if (data.url) {
@@ -253,6 +266,9 @@ export default function PricingPage() {
         );
         setPromoCode("");
         setIsModalOpen(false);
+        setTimeout(() => {
+          window.location.href = "/dashboard?upgraded=true";
+        }, 1500);
       } catch (err) {
         console.error("Redeem code error:", err);
         setPromoMessage("Failed to redeem code. Please try again.");
@@ -340,6 +356,9 @@ export default function PricingPage() {
       setDevKeyInput("");
       setModalDevKey("");
       setShowModalDevInput(false);
+      setTimeout(() => {
+        window.location.href = "/dashboard?upgraded=true";
+      }, 1500);
     } catch (err) {
       console.error("Referral error:", err);
       setPromoMessage(`Failed to apply ${type} referral.`);
@@ -395,6 +414,54 @@ export default function PricingPage() {
     },
   ];
 
+  if (loading) {
+    return (
+      <div
+        style={{
+          background: "var(--dark)",
+          color: "var(--teal)",
+          height: "100vh",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          fontFamily: "var(--mono)",
+          gap: "16px"
+        }}
+      >
+        <div style={{ fontSize: "24px" }} className="animate-pulse">💎</div>
+        <div style={{ fontSize: "12px", letterSpacing: "0.15em", textTransform: "uppercase" }}>
+          Establishing secure payment gateway...
+        </div>
+        <div style={{ width: "200px", height: "2px", background: "rgba(94, 224, 168, 0.1)", borderRadius: "1px", position: "relative", overflow: "hidden" }}>
+          <div
+            style={{
+              position: "absolute",
+              height: "100%",
+              width: "50%",
+              background: "var(--teal)",
+              animation: "loading-bar 1.2s infinite ease-in-out"
+            }}
+          />
+        </div>
+        <style dangerouslySetInnerHTML={{__html: `
+          @keyframes loading-bar {
+            0% { left: -50%; }
+            50% { left: 100%; }
+            100% { left: 100%; }
+          }
+          @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: .5; }
+          }
+          .animate-pulse {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+          }
+        `}} />
+      </div>
+    );
+  }
+
   return (
     <div className="landing-body" style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
       {/* Background Elements */}
@@ -405,34 +472,46 @@ export default function PricingPage() {
 
       {/* Nav */}
       <nav>
-        <Link href="/" className="logo">
+        <Link href={fromSettings ? "/dashboard" : "/"} className="logo">
           <div className="logo-icon">
             <span></span>
           </div>
           NEXINC
         </Link>
-        <ul className="nav-links">
-          <li>
-            <Link href="/models">Models</Link>
-          </li>
-          <li>
-            <Link href="/#features">Features</Link>
-          </li>
-          <li>
-            <Link href="/#terminal">Terminal</Link>
-          </li>
-          <li>
-            <Link href="/pricing" style={{ color: "var(--teal)" }}>Pricing</Link>
-          </li>
-        </ul>
+        {!fromSettings && (
+          <ul className="nav-links">
+            <li>
+              <Link href="/models">Models</Link>
+            </li>
+            <li>
+              <Link href="/#features">Features</Link>
+            </li>
+            <li>
+              <Link href="/#terminal">Terminal</Link>
+            </li>
+            <li>
+              <Link href="/pricing" style={{ color: "var(--teal)" }}>Pricing</Link>
+            </li>
+          </ul>
+        )}
         <div style={{ display: "flex", alignItems: "center", gap: "24px" }}>
           <div className="nav-status">
             <div className="status-dot"></div>
             US-EAST-1A · 99.98% UPTIME
           </div>
-          <Link href="/login" className="nav-cta">
-            Sign in
-          </Link>
+          {loading ? (
+            <div className="nav-cta" style={{ opacity: 0.5, pointerEvents: "none" }}>
+              Loading...
+            </div>
+          ) : profile ? (
+            <Link href="/dashboard" className="nav-cta">
+              {fromSettings ? "Back to Dashboard" : "Dashboard"}
+            </Link>
+          ) : (
+            <Link href="/login" className="nav-cta">
+              Sign in
+            </Link>
+          )}
         </div>
       </nav>
 

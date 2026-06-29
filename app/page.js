@@ -3,12 +3,37 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
+import { getProfile } from "@/lib/supabase/queries";
 import "./landing.css";
 
 export default function LandingPage() {
   const router = useRouter();
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [transitionText, setTransitionText] = useState("");
+
+  const supabase = createClient();
+  const [profile, setProfile] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadUser() {
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (user) {
+          const prof = await getProfile(supabase, user.id);
+          setProfile(prof);
+        }
+      } catch (err) {
+        console.error("Error loading user profile:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadUser();
+  }, []);
 
   const proceduralCanvasRef = useRef(null);
   const particleCanvasRef = useRef(null);
@@ -449,9 +474,19 @@ export default function LandingPage() {
             <div className="status-dot"></div>
             US-EAST-1A · 99.98% UPTIME
           </div>
-          <Link href="/login" className="nav-cta" onClick={(e) => handleTransitionNav(e, "/login", "ESTABLISHING SECURE GATEWAY...")}>
-            Sign in
-          </Link>
+          {loading ? (
+            <div className="nav-cta" style={{ opacity: 0.5, pointerEvents: "none" }}>
+              Loading...
+            </div>
+          ) : profile ? (
+            <Link href="/dashboard" className="nav-cta" onClick={(e) => handleTransitionNav(e, "/dashboard", "REDIRECTING TO SECURE TERMINAL...")}>
+              Dashboard
+            </Link>
+          ) : (
+            <Link href="/login" className="nav-cta" onClick={(e) => handleTransitionNav(e, "/login", "ESTABLISHING SECURE GATEWAY...")}>
+              Sign in
+            </Link>
+          )}
         </div>
       </nav>
 
@@ -481,9 +516,19 @@ export default function LandingPage() {
         </p>
 
         <div className="hero-actions">
-          <Link href="/signup" className="btn-primary" onClick={(e) => handleTransitionNav(e, "/signup", "SPINNING UP CONTAINER INSTANCE...")}>
-            Get started free <span className="btn-arrow">→</span>
-          </Link>
+          {loading ? (
+            <div className="btn-primary" style={{ opacity: 0.5, pointerEvents: "none" }}>
+              Loading...
+            </div>
+          ) : profile ? (
+            <Link href="/dashboard" className="btn-primary" onClick={(e) => handleTransitionNav(e, "/dashboard", "LAUNCHING SECURE WORKSPACE...")}>
+              Go to Dashboard <span className="btn-arrow">→</span>
+            </Link>
+          ) : (
+            <Link href="/signup" className="btn-primary" onClick={(e) => handleTransitionNav(e, "/signup", "SPINNING UP CONTAINER INSTANCE...")}>
+              Get started free <span className="btn-arrow">→</span>
+            </Link>
+          )}
           <Link href="/models" className="btn-secondary" onClick={(e) => handleTransitionNav(e, "/models", "CONNECTING TO MODEL REGISTRY...")}>
             Browse models
           </Link>
@@ -778,9 +823,19 @@ export default function LandingPage() {
               No config files, no environment headaches. Pick a model and start
               chatting — or drop to our API for full programmatic control.
             </p>
-            <Link href="/signup" className="btn-primary" onClick={(e) => handleTransitionNav(e, "/signup", "SPINNING UP TERMINAL PORT...")}>
-              Open terminal <span className="btn-arrow">→</span>
-            </Link>
+            {loading ? (
+              <div className="btn-primary" style={{ opacity: 0.5, pointerEvents: "none" }}>
+                Loading...
+              </div>
+            ) : profile ? (
+              <Link href="/dashboard" className="btn-primary" onClick={(e) => handleTransitionNav(e, "/dashboard", "LAUNCHING SECURE WORKSPACE...")}>
+                Open terminal <span className="btn-arrow">→</span>
+              </Link>
+            ) : (
+              <Link href="/signup" className="btn-primary" onClick={(e) => handleTransitionNav(e, "/signup", "SPINNING UP TERMINAL PORT...")}>
+                Open terminal <span className="btn-arrow">→</span>
+              </Link>
+            )}
           </div>
 
           <div className="terminal-window reveal reveal-delay-2">
@@ -855,14 +910,29 @@ export default function LandingPage() {
             Free to start. No credit card required. Upgrade when you need more.
           </p>
           <div className="cta-buttons">
-            <Link
-              href="/signup"
-              className="btn-primary"
-              style={{ fontSize: "13px", padding: "18px 48px" }}
-              onClick={(e) => handleTransitionNav(e, "/signup", "INITIALIZING ACCOUNT REGISTRATION...")}
-            >
-              Create free account <span className="btn-arrow">→</span>
-            </Link>
+            {loading ? (
+              <div className="btn-primary" style={{ fontSize: "13px", padding: "18px 48px", opacity: 0.5, pointerEvents: "none" }}>
+                Loading...
+              </div>
+            ) : profile ? (
+              <Link
+                href="/dashboard"
+                className="btn-primary"
+                style={{ fontSize: "13px", padding: "18px 48px" }}
+                onClick={(e) => handleTransitionNav(e, "/dashboard", "LAUNCHING SECURE WORKSPACE...")}
+              >
+                Go to Dashboard <span className="btn-arrow">→</span>
+              </Link>
+            ) : (
+              <Link
+                href="/signup"
+                className="btn-primary"
+                style={{ fontSize: "13px", padding: "18px 48px" }}
+                onClick={(e) => handleTransitionNav(e, "/signup", "INITIALIZING ACCOUNT REGISTRATION...")}
+              >
+                Create free account <span className="btn-arrow">→</span>
+              </Link>
+            )}
             <Link
               href="/pricing"
               className="btn-secondary"

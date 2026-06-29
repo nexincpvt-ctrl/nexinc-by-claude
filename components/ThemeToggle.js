@@ -3,25 +3,21 @@
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 
+const themes = [
+  { id: "default", name: "🍊 Default Dark", label: "Default" },
+  { id: "partyrock", name: "🎈 Partyrock", label: "Partyrock" },
+  { id: "bw", name: "🕶️ Stark B&W", label: "Stark B&W" },
+  { id: "wb", name: "⬜ Stark W&B", label: "Stark W&B" },
+  { id: "wg", name: "🌿 Mint Green", label: "Mint Green" },
+  { id: "cyberpunk", name: "👾 Cyberpunk", label: "Cyberpunk" },
+  { id: "matrix", name: "⚡ Matrix", label: "Matrix" },
+  { id: "retro", name: "📺 Retro Amber", label: "Retro" }
+];
+
 export default function ThemeToggle({ isInline = false }) {
   const pathname = usePathname();
   const [theme, setTheme] = useState("default");
   const [isOpen, setIsOpen] = useState(false);
-
-  if (pathname === "/dashboard" && !isInline) {
-    return null;
-  }
-
-  const themes = [
-    { id: "default", name: "🍊 Default Dark", label: "Default" },
-    { id: "partyrock", name: "🎈 Partyrock", label: "Partyrock" },
-    { id: "bw", name: "🕶️ Stark B&W", label: "Stark B&W" },
-    { id: "wb", name: "⬜ Stark W&B", label: "Stark W&B" },
-    { id: "wg", name: "🌿 Mint Green", label: "Mint Green" },
-    { id: "cyberpunk", name: "👾 Cyberpunk", label: "Cyberpunk" },
-    { id: "matrix", name: "⚡ Matrix", label: "Matrix" },
-    { id: "retro", name: "📺 Retro Amber", label: "Retro" }
-  ];
 
   useEffect(() => {
     const savedTheme = localStorage.getItem("theme") || "default";
@@ -33,6 +29,10 @@ export default function ThemeToggle({ isInline = false }) {
       document.documentElement.classList.add("dark");
     }
   }, []);
+
+  if (pathname === "/dashboard" && !isInline) {
+    return null;
+  }
 
   const handleSelectTheme = (themeId) => {
     setTheme(themeId);

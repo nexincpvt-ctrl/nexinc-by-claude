@@ -18,7 +18,7 @@ export async function POST(req) {
     }
 
     const body = await req.json().catch(() => ({}));
-    const { billingCycle } = body;
+    const { billingCycle, cancelUrl } = body;
 
     if (billingCycle !== "monthly" && billingCycle !== "yearly") {
       return NextResponse.json(
@@ -79,7 +79,7 @@ export async function POST(req) {
         },
       ],
       success_url: `${origin}/dashboard?upgraded=true`,
-      cancel_url: `${origin}/pricing`,
+      cancel_url: cancelUrl || `${origin}/pricing`,
       metadata: {
         supabase_user_id: user.id,
       },

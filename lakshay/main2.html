@@ -1,0 +1,1265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nexinc — Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0B0D10; --panel:#13161B; --panel-2:#181C22; --panel-3:#0F1216;
+  --border:#262B33; --border-soft:#1E2229;
+  --text:#E9EBEE; --text-dim:#8A919C; --text-faint:#565D68;
+  --signal:#5EE0A8; --signal-dim:#2E5E4C; --signal-glow:rgba(94,224,168,0.35);
+  --warn:#FF6B5C; --code-bg:#0D1014;
+  --research:#5C9DFF; --research-dim:#2C4F94; --research-glow:rgba(92,157,255,0.3);
+  --private:#C792FF; --private-dim:#6B349C; --private-glow:rgba(199,146,255,0.3);
+  --code-accent:#FFB454; --code-accent-dim:#946A21; --code-glow:rgba(255,180,84,0.3);
+  --visual:#8C7CFF; --visual-dim:#473C94; --visual-glow:rgba(140,124,255,0.32);
+  --mono:'JetBrains Mono', monospace; --sans:'Inter', sans-serif;
+}
+*{ margin:0; padding:0; box-sizing:border-box; }
+html,body{ height:100%; }
+body{ background:var(--bg); color:var(--text); font-family:var(--sans); overflow:hidden; -webkit-font-smoothing:antialiased; }
+button{ font-family:inherit; }
+::-webkit-scrollbar{ width:8px; height:8px; }
+::-webkit-scrollbar-thumb{ background:var(--border); border-radius:4px; }
+::-webkit-scrollbar-track{ background:transparent; }
+
+.app{ display:grid; grid-template-columns: 260px 1fr; grid-template-rows: 52px 1fr; height:100vh; width:100vw; }
+
+/* ============ MODE SWITCHER (top-level: Text / Visual / Codeinc) ============ */
+.mode-switcher{
+  display:flex; align-items:stretch; position:relative;
+  border:1px solid var(--border); background:var(--panel-3); height:36px;
+}
+.mode-switcher::before{
+  content:''; position:absolute; left:0; bottom:-1px; height:2px; width:calc(100% / 3);
+  background:var(--mode-active-color, var(--signal)); box-shadow:0 0 8px var(--mode-active-glow, var(--signal-glow));
+  transform:translateX(var(--mode-rail-x, 0%)); transition: transform 0.25s cubic-bezier(.65,0,.35,1), background 0.2s, box-shadow 0.2s;
+}
+.mode-btn{
+  display:flex; align-items:center; gap:8px; padding:0 16px; cursor:pointer; flex:1; justify-content:center;
+  font-family:var(--mono); font-size:11.5px; font-weight:600; letter-spacing:0.04em; color:var(--text-faint);
+  background:transparent; border:none; position:relative; text-transform:uppercase;
+  border-right:1px solid var(--border-soft);
+}
+.mode-btn:last-child{ border-right:none; }
+.mode-btn .mode-idx{ font-size:9.5px; color:var(--text-faint); opacity:0.7; font-weight:700; }
+.mode-btn svg{ width:13px; height:13px; flex-shrink:0; opacity:0.75; transition: opacity 0.18s, color 0.18s; }
+.mode-btn:hover{ color:var(--text-dim); background:var(--panel-2); }
+.mode-btn.active{ color:var(--mode-color); }
+.mode-btn.active svg{ opacity:1; color:var(--mode-color); }
+.mode-btn.active .mode-idx{ color:var(--mode-color); opacity:1; }
+.mode-btn[data-mode="text"]{ --mode-color:var(--signal); }
+.mode-btn[data-mode="visual"]{ --mode-color:var(--visual); }
+.mode-btn[data-mode="codeinc"]{ --mode-color:var(--code-accent); }
+
+/* ============ TOPBAR ============ */
+.topbar{ grid-column:1/-1; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid var(--border); background:var(--panel); padding:0 16px; position:relative; z-index:30; }
+.topbar-left{ display:flex; align-items:center; gap:14px; }
+.brand-mini{ display:flex; align-items:center; gap:8px; }
+.brand-mark-sm{ width:18px; height:18px; background:linear-gradient(135deg, var(--signal), var(--signal-dim)); position:relative; flex-shrink:0; }
+.brand-mark-sm::after{ content:''; position:absolute; inset:4px; background:var(--bg); }
+.brand-name-sm{ font-family:var(--mono); font-weight:700; font-size:13px; letter-spacing:0.02em; }
+
+.model-trigger{
+  display:flex; align-items:center; gap:8px; background:var(--panel-2); border:1px solid var(--border);
+  padding:7px 12px; cursor:pointer; font-family:var(--mono); font-size:12.5px; color:var(--text);
+  transition: border-color 0.15s, transform 0.12s;
+}
+.model-trigger:hover{ border-color:var(--signal); transform:translateY(-1px); }
+.model-trigger .model-dot{ width:7px; height:7px; border-radius:50%; background:var(--signal); box-shadow:0 0 6px var(--signal-glow); flex-shrink:0; animation:pulse 2s ease-in-out infinite; }
+@keyframes pulse{ 0%,100%{opacity:1;} 50%{opacity:0.4;} }
+.model-trigger svg.expand{ width:12px; height:12px; color:var(--text-faint); }
+
+.topbar-right{ display:flex; align-items:center; gap:10px; }
+.icon-btn{ width:34px; height:34px; display:flex; align-items:center; justify-content:center; background:transparent; border:1px solid transparent; color:var(--text-dim); cursor:pointer; border-radius:2px; transition: background 0.15s, color 0.15s, border-color 0.15s; }
+.icon-btn:hover{ background:var(--panel-2); border-color:var(--border); color:var(--text); }
+.icon-btn svg{ width:17px; height:17px; }
+.avatar-btn{ width:30px; height:30px; border-radius:2px; background:var(--signal-dim); display:flex; align-items:center; justify-content:center; cursor:pointer; font-family:var(--mono); font-size:12px; font-weight:700; color:var(--signal); border:1px solid var(--border); }
+
+/* ============ SIDEBAR ============ */
+.sidebar{ background:var(--panel); border-right:1px solid var(--border); display:flex; flex-direction:column; overflow:hidden; position:relative; }
+.sidebar-panel{ display:none; flex-direction:column; height:100%; overflow:hidden; }
+.sidebar-panel.active{ display:flex; }
+.sidebar-top{ padding:14px; display:flex; flex-direction:column; gap:8px; }
+.new-chat-btn{ display:flex; align-items:center; justify-content:center; gap:8px; background:var(--signal); color:var(--bg); border:none; font-family:var(--mono); font-weight:700; font-size:12.5px; letter-spacing:0.03em; text-transform:uppercase; padding:10px 0; cursor:pointer; transition: transform 0.12s, box-shadow 0.18s; }
+.new-chat-btn:hover{ box-shadow:0 0 0 1px var(--signal), 0 6px 18px var(--signal-glow); transform:translateY(-1px); }
+
+.search-wrap{ position:relative; }
+.search-wrap input{ width:100%; background:var(--bg); border:1px solid var(--border); color:var(--text); font-size:12.5px; padding:8px 10px 8px 30px; outline:none; font-family:var(--sans); transition: border-color 0.15s; }
+.search-wrap input:focus{ border-color:var(--signal); }
+.search-wrap input::placeholder{ color:var(--text-faint); }
+.search-wrap svg{ position:absolute; left:9px; top:50%; transform:translateY(-50%); width:13px; height:13px; color:var(--text-faint); }
+
+/* ---- SECTION TILES (Research / Private / Codeinc) ---- */
+.section-tiles{ display:flex; flex-direction:column; gap:8px; padding:4px 14px 14px; }
+.section-tile{
+  display:flex; align-items:center; gap:11px; padding:12px 12px;
+  border:1px solid var(--border); background:var(--panel-2); cursor:pointer;
+  border-radius:3px; position:relative; overflow:hidden;
+  transition: border-color 0.18s, transform 0.15s, background 0.18s;
+}
+.section-tile::before{
+  content:''; position:absolute; inset:0; opacity:0; transition:opacity 0.2s;
+  background: radial-gradient(circle at 0% 0%, var(--tile-glow), transparent 70%);
+}
+.section-tile:hover{ transform:translateX(2px); border-color:var(--tile-color); }
+.section-tile:hover::before{ opacity:1; }
+.section-tile.active{ border-color:var(--tile-color); background:var(--panel-3); box-shadow: inset 0 0 0 1px var(--tile-color); }
+.tile-icon{
+  width:34px; height:34px; border-radius:3px; display:flex; align-items:center; justify-content:center;
+  background:var(--tile-color); color:var(--bg); flex-shrink:0; position:relative; z-index:1;
+}
+.tile-icon svg{ width:17px; height:17px; }
+.tile-text{ flex:1; position:relative; z-index:1; }
+.tile-name{ font-family:var(--mono); font-size:12.5px; font-weight:700; letter-spacing:0.02em; color:var(--text); }
+.tile-sub{ font-size:10.5px; color:var(--text-faint); margin-top:1px; }
+.tile-arrow{ color:var(--text-faint); flex-shrink:0; position:relative; z-index:1; transition: transform 0.15s; }
+.section-tile:hover .tile-arrow{ transform:translateX(2px); color:var(--tile-color); }
+
+.tile-research{ --tile-color:var(--research); --tile-glow:var(--research-glow); }
+.tile-private{ --tile-color:var(--private); --tile-glow:var(--private-glow); }
+.tile-code{ --tile-color:var(--code-accent); --tile-glow:var(--code-glow); }
+.tile-visual-mode{ --tile-color:var(--visual); --tile-glow:var(--visual-glow); }
+.new-chat-visual{ background:var(--visual); }
+.new-chat-visual:hover{ box-shadow:0 0 0 1px var(--visual), 0 6px 18px var(--visual-glow); }
+.new-chat-code{ background:var(--code-accent); color:#241704; }
+.new-chat-code:hover{ box-shadow:0 0 0 1px var(--code-accent), 0 6px 18px var(--code-glow); }
+
+.sidebar-scroll{ flex:1; overflow-y:auto; padding:6px 10px 10px; }
+.section-label{ font-family:var(--mono); font-size:10.5px; color:var(--text-faint); text-transform:uppercase; letter-spacing:0.08em; padding:14px 8px 6px; }
+.chat-item{ display:flex; align-items:center; gap:8px; padding:8px 8px; cursor:pointer; border-radius:2px; position:relative; font-size:12.8px; color:var(--text-dim); border:1px solid transparent; }
+.chat-item:hover{ background:var(--panel-2); color:var(--text); }
+.chat-item.active{ background:var(--panel-2); color:var(--text); border-color:var(--border); }
+.chat-item.active::before{ content:''; position:absolute; left:0; top:8px; bottom:8px; width:2px; background:var(--signal); }
+.chat-item .ci-title{ flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.chat-item .ci-icon{ width:13px; height:13px; flex-shrink:0; color:var(--text-faint); }
+
+.sidebar-bottom{ border-top:1px solid var(--border); padding:12px 14px; font-family:var(--mono); font-size:11px; color:var(--text-faint); }
+.usage-bar{ width:100%; height:3px; background:var(--border); border-radius:2px; overflow:hidden; margin-top:6px; }
+.usage-fill{ height:100%; background:var(--signal); width:34%; }
+
+/* ============ WORKSPACE CONTAINER ============ */
+.workspace{ position:relative; overflow:hidden; background:var(--bg); }
+.view{ position:absolute; inset:0; display:flex; flex-direction:column; opacity:0; pointer-events:none; transform:scale(0.98); transition: opacity 0.25s ease, transform 0.25s ease; }
+.view.active{ opacity:1; pointer-events:auto; transform:scale(1); }
+
+/* ============ DEFAULT CHAT VIEW ============ */
+.chat-scroll{ flex:1; overflow-y:auto; padding:28px 0 12px; }
+.chat-inner{ max-width:720px; margin:0 auto; padding:0 24px; display:flex; flex-direction:column; gap:26px; }
+.empty-state{ height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:18px; padding:0 24px; text-align:center; }
+.empty-node{ width:64px; height:64px; position:relative; perspective:600px; }
+.empty-node .ecube{ width:100%; height:100%; position:relative; transform-style:preserve-3d; transform: rotateX(55deg) rotateZ(45deg); animation: spinSlow 9s linear infinite; }
+@keyframes spinSlow{ from{ transform: rotateX(55deg) rotateZ(45deg); } to{ transform: rotateX(55deg) rotateZ(405deg); } }
+.empty-node .ef{ position:absolute; width:44px; height:44px; border:1px solid rgba(255,255,255,0.08); left:10px; top:10px; }
+.empty-node .et{ background:linear-gradient(135deg, var(--signal), var(--signal-dim)); transform:translateZ(22px); box-shadow:0 0 20px var(--signal-glow); }
+.empty-node .es{ width:22px; background:var(--signal-dim); transform: rotateY(90deg) translateZ(22px); transform-origin:right; left:32px; opacity:0.7; }
+.empty-node .eb{ height:22px; background:var(--signal-dim); transform: rotateX(-90deg) translateZ(22px); transform-origin:bottom; top:32px; opacity:0.5; }
+.empty-state h2{ font-size:21px; font-weight:600; letter-spacing:-0.01em; }
+.empty-state p{ color:var(--text-dim); font-size:13.5px; max-width:380px; line-height:1.6; }
+.suggest-row{ display:flex; gap:10px; flex-wrap:wrap; justify-content:center; margin-top:8px; }
+.suggest-chip{ border:1px solid var(--border); background:var(--panel-2); color:var(--text-dim); font-size:12px; padding:9px 14px; cursor:pointer; border-radius:2px; transition: border-color 0.15s, color 0.15s, transform 0.12s; }
+.suggest-chip:hover{ border-color:var(--signal); color:var(--text); transform:translateY(-1px); }
+
+.msg{ display:flex; gap:12px; animation: msgIn 0.25s ease; }
+@keyframes msgIn{ from{ opacity:0; transform:translateY(6px); } to{ opacity:1; transform:translateY(0); } }
+.msg-avatar{ width:28px; height:28px; flex-shrink:0; border-radius:2px; display:flex; align-items:center; justify-content:center; font-family:var(--mono); font-size:11px; font-weight:700; }
+.msg.user .msg-avatar{ background:var(--panel-2); color:var(--text-dim); border:1px solid var(--border); }
+.msg.assistant .msg-avatar{ background:linear-gradient(135deg, var(--signal), var(--signal-dim)); color:var(--bg); }
+.msg-body{ flex:1; min-width:0; padding-top:3px; }
+.msg-name{ font-family:var(--mono); font-size:11px; color:var(--text-faint); margin-bottom:5px; text-transform:uppercase; letter-spacing:0.04em; }
+.msg-text{ font-size:14.5px; line-height:1.65; color:var(--text); }
+.msg-text p{ margin-bottom:10px; }
+.msg-text p:last-child{ margin-bottom:0; }
+.typing-dots{ display:flex; gap:4px; padding:6px 0; }
+.typing-dots span{ width:6px; height:6px; border-radius:50%; background:var(--text-faint); animation: tdBounce 1.2s ease-in-out infinite; }
+.typing-dots span:nth-child(2){ animation-delay:0.15s; }
+.typing-dots span:nth-child(3){ animation-delay:0.3s; }
+@keyframes tdBounce{ 0%,60%,100%{ transform:translateY(0); opacity:0.4; } 30%{ transform:translateY(-4px); opacity:1; } }
+
+.composer-wrap{ padding:14px 24px 20px; }
+.composer{ max-width:720px; margin:0 auto; background:var(--panel-2); border:1px solid var(--border); border-radius:4px; transition: border-color 0.18s, box-shadow 0.18s; display:flex; flex-direction:column; }
+.composer:focus-within{ border-color:var(--signal); box-shadow:0 0 0 3px var(--signal-glow); }
+.composer textarea{ width:100%; background:transparent; border:none; outline:none; resize:none; color:var(--text); font-family:var(--sans); font-size:14px; line-height:1.5; padding:14px 14px 6px; max-height:200px; }
+.composer textarea::placeholder{ color:var(--text-faint); }
+.composer-toolbar{ display:flex; align-items:center; justify-content:space-between; padding:6px 10px 10px; }
+.send-btn{ width:32px; height:32px; border-radius:2px; background:var(--signal); border:none; display:flex; align-items:center; justify-content:center; cursor:pointer; color:var(--bg); transition: transform 0.12s, box-shadow 0.18s; }
+.send-btn:hover{ box-shadow:0 0 0 1px var(--signal), 0 4px 14px var(--signal-glow); transform:translateY(-1px); }
+.send-btn svg{ width:15px; height:15px; }
+.composer-hint{ text-align:center; font-size:11px; color:var(--text-faint); margin-top:8px; font-family:var(--mono); }
+.icon-mini{ width:32px; height:32px; display:flex; align-items:center; justify-content:center; background:transparent; border:none; color:var(--text-faint); cursor:pointer; border-radius:2px; }
+.icon-mini:hover{ background:var(--panel-3); color:var(--text); }
+.icon-mini svg{ width:15px; height:15px; }
+
+/* ============ WORKSPACE HEADER (shared by Research/Private/Code) ============ */
+.ws-header{ display:flex; align-items:center; justify-content:space-between; padding:18px 28px; border-bottom:1px solid var(--ws-color); background: linear-gradient(180deg, var(--ws-tint), transparent); }
+.ws-header-left{ display:flex; align-items:center; gap:14px; }
+.ws-icon-big{ width:42px; height:42px; border-radius:4px; background:var(--ws-color); color:var(--bg); display:flex; align-items:center; justify-content:center; box-shadow:0 0 24px var(--ws-glow); }
+.ws-icon-big svg{ width:21px; height:21px; }
+.ws-title{ font-family:var(--mono); font-size:16px; font-weight:700; letter-spacing:0.01em; }
+.ws-subtitle{ font-size:12px; color:var(--text-dim); margin-top:2px; }
+.ws-back{ display:flex; align-items:center; gap:6px; background:var(--panel-2); border:1px solid var(--border); color:var(--text-dim); font-family:var(--mono); font-size:11.5px; padding:8px 12px; cursor:pointer; border-radius:2px; transition: border-color 0.15s, color 0.15s; }
+.ws-back:hover{ border-color:var(--ws-color); color:var(--text); }
+.ws-back svg{ width:13px; height:13px; }
+
+/* ===== RESEARCH WORKSPACE ===== */
+#viewResearch{ --ws-color:var(--research); --ws-tint:rgba(92,157,255,0.08); --ws-glow:var(--research-glow); }
+.research-body{ flex:1; display:grid; grid-template-columns: 1fr 360px; overflow:hidden; }
+.research-main{ overflow-y:auto; padding:22px 28px; }
+.research-input-row{ display:flex; gap:10px; margin-bottom:20px; }
+.research-input-row input{ flex:1; background:var(--panel-2); border:1px solid var(--border); color:var(--text); font-size:14px; padding:12px 14px; outline:none; border-radius:3px; transition:border-color .15s; }
+.research-input-row input:focus{ border-color:var(--research); }
+.research-go{ background:var(--research); color:var(--bg); border:none; font-family:var(--mono); font-weight:700; font-size:12px; text-transform:uppercase; padding:0 18px; cursor:pointer; border-radius:3px; transition: box-shadow .18s, transform .12s; }
+.research-go:hover{ box-shadow:0 0 0 1px var(--research), 0 6px 18px var(--research-glow); transform:translateY(-1px); }
+
+.research-status{ display:flex; align-items:center; gap:10px; font-family:var(--mono); font-size:12px; color:var(--text-dim); margin-bottom:18px; }
+.research-status .rdot{ width:7px; height:7px; border-radius:50%; background:var(--research); animation:pulse 1.2s ease-in-out infinite; }
+.research-steps{ display:flex; flex-direction:column; gap:10px; margin-bottom:24px; }
+.research-step{ display:flex; align-items:center; gap:10px; font-size:13px; color:var(--text-faint); opacity:0.4; transition: opacity .3s; }
+.research-step.done{ opacity:1; color:var(--text-dim); }
+.research-step.active{ opacity:1; color:var(--text); }
+.research-step .step-check{ width:16px; height:16px; border-radius:50%; border:1px solid var(--border); flex-shrink:0; display:flex; align-items:center; justify-content:center; }
+.research-step.done .step-check{ background:var(--research); border-color:var(--research); }
+.research-step.done .step-check svg{ width:9px; height:9px; color:var(--bg); }
+
+.research-findings h3{ font-size:14px; margin-bottom:10px; font-weight:600; }
+.research-findings p{ font-size:13.5px; line-height:1.7; color:var(--text-dim); margin-bottom:12px; }
+.cite-chip{ display:inline-flex; align-items:center; gap:3px; font-family:var(--mono); font-size:10.5px; background:var(--panel-2); border:1px solid var(--border); color:var(--research); padding:1px 6px; border-radius:8px; margin-left:3px; cursor:pointer; vertical-align:middle; }
+
+.research-sidebar{ border-left:1px solid var(--border); background:var(--panel); overflow-y:auto; padding:18px; }
+.research-sidebar h4{ font-family:var(--mono); font-size:11px; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-faint); margin-bottom:12px; }
+.source-card{ border:1px solid var(--border); background:var(--panel-2); padding:11px; border-radius:3px; cursor:pointer; transition: border-color .15s, transform .12s; margin-bottom:10px; }
+.source-card:hover{ border-color:var(--research); transform:translateX(2px); }
+.source-card .sc-domain{ font-family:var(--mono); font-size:10.5px; color:var(--research); margin-bottom:4px; }
+.source-card .sc-title{ font-size:12.5px; color:var(--text); margin-bottom:4px; line-height:1.4; font-weight:500; }
+.source-card .sc-snippet{ font-size:11.5px; color:var(--text-faint); line-height:1.5; }
+
+/* ===== PRIVATE WORKSPACE ===== */
+#viewPrivate{ --ws-color:var(--private); --ws-tint:rgba(199,146,255,0.08); --ws-glow:var(--private-glow); }
+.private-body{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:40px; text-align:center; gap:16px; }
+.private-shield{ width:72px; height:72px; border-radius:50%; background:var(--panel-2); border:1.5px solid var(--private); display:flex; align-items:center; justify-content:center; box-shadow:0 0 30px var(--private-glow); animation: shieldPulse 3s ease-in-out infinite; }
+@keyframes shieldPulse{ 0%,100%{ box-shadow:0 0 20px var(--private-glow); } 50%{ box-shadow:0 0 40px var(--private-glow); } }
+.private-shield svg{ width:34px; height:34px; color:var(--private); }
+.private-body h2{ font-size:20px; font-weight:600; }
+.private-body p{ color:var(--text-dim); font-size:13.5px; max-width:420px; line-height:1.6; }
+.private-feature-list{ display:flex; flex-direction:column; gap:10px; margin-top:8px; text-align:left; width:100%; max-width:420px; }
+.priv-feature{ display:flex; gap:10px; align-items:flex-start; font-size:12.5px; color:var(--text-dim); }
+.priv-feature svg{ width:14px; height:14px; color:var(--private); flex-shrink:0; margin-top:2px; }
+.private-cta{ margin-top:14px; background:var(--private); color:#1A0F26; border:none; font-family:var(--mono); font-weight:700; font-size:12.5px; text-transform:uppercase; padding:12px 24px; cursor:pointer; border-radius:3px; transition: box-shadow .18s, transform .12s; }
+.private-cta:hover{ box-shadow:0 0 0 1px var(--private), 0 8px 24px var(--private-glow); transform:translateY(-1px); }
+
+.private-active-chat{ display:none; flex:1; flex-direction:column; overflow:hidden; }
+.private-active-chat.show{ display:flex; }
+.private-chat-scroll{ flex:1; overflow-y:auto; padding:24px 28px; max-width:680px; margin:0 auto; width:100%; }
+.private-banner{ display:flex; align-items:center; gap:8px; background:rgba(199,146,255,0.08); border:1px solid var(--private-dim); color:var(--private); font-family:var(--mono); font-size:11px; padding:8px 14px; border-radius:3px; margin-bottom:18px; }
+.private-banner svg{ width:13px; height:13px; }
+
+/* ===== CODEINC WORKSPACE ===== */
+#viewCode{ --ws-color:var(--code-accent); --ws-tint:rgba(255,180,84,0.08); --ws-glow:var(--code-glow); }
+.code-body{ flex:1; display:grid; grid-template-columns: 220px 1fr; overflow:hidden; }
+.file-tree{ border-right:1px solid var(--border); background:var(--panel); padding:14px 10px; overflow-y:auto; }
+.file-tree h4{ font-family:var(--mono); font-size:10.5px; text-transform:uppercase; color:var(--text-faint); letter-spacing:0.06em; padding:4px 8px 10px; }
+.file-row{ display:flex; align-items:center; gap:7px; padding:7px 8px; font-size:12.5px; color:var(--text-dim); cursor:pointer; border-radius:2px; font-family:var(--mono); }
+.file-row:hover{ background:var(--panel-2); color:var(--text); }
+.file-row.active{ background:var(--panel-2); color:var(--code-accent); border-left:2px solid var(--code-accent); padding-left:6px; }
+.file-row svg{ width:13px; height:13px; flex-shrink:0; color:var(--text-faint); }
+.file-row.active svg{ color:var(--code-accent); }
+
+.code-main{ display:flex; flex-direction:column; overflow:hidden; }
+.code-tabs{ display:flex; border-bottom:1px solid var(--border); background:var(--panel-3); }
+.code-tab{ display:flex; align-items:center; gap:7px; padding:10px 16px; font-family:var(--mono); font-size:12px; color:var(--text-faint); border-right:1px solid var(--border); cursor:pointer; }
+.code-tab.active{ background:var(--code-bg); color:var(--text); border-top:2px solid var(--code-accent); margin-top:-1px; }
+.code-editor{ flex:1; overflow-y:auto; background:var(--code-bg); padding:20px 24px; font-family:var(--mono); font-size:13px; line-height:1.75; }
+.code-editor .ln{ color:var(--text-faint); display:inline-block; width:24px; user-select:none; }
+.code-editor .kw{ color:#C792FF; } .code-editor .str{ color:var(--signal); } .code-editor .com{ color:var(--text-faint); } .code-editor .fn{ color:var(--research); } .code-editor .num{ color:var(--code-accent); }
+.code-actions-row{ display:flex; align-items:center; justify-content:space-between; padding:10px 20px; border-top:1px solid var(--border); background:var(--panel-3); }
+.code-gen-status{ font-family:var(--mono); font-size:11px; color:var(--text-faint); }
+.code-actions{ display:flex; gap:6px; }
+.code-action-btn{ display:flex; align-items:center; gap:6px; background:var(--panel-2); border:1px solid var(--border); color:var(--text-dim); font-family:var(--mono); font-size:11px; padding:7px 12px; cursor:pointer; border-radius:2px; transition: border-color .15s, color .15s, transform .12s; }
+.code-action-btn svg{ width:12px; height:12px; }
+.code-action-btn:hover{ border-color:var(--code-accent); color:var(--text); transform:translateY(-1px); }
+#regenBtn:hover svg{ animation: spinOnce .5s ease; }
+@keyframes spinOnce{ from{ transform:rotate(0); } to{ transform:rotate(220deg); } }
+
+.code-model-tag{ display:flex; align-items:center; gap:7px; font-family:var(--mono); font-size:11px; color:var(--text-dim); background:var(--panel-2); border:1px solid var(--border); padding:6px 12px; border-radius:3px; }
+.cmt-dot{ width:6px; height:6px; border-radius:50%; background:var(--code-accent); box-shadow:0 0 6px var(--code-glow); animation:pulse 2s ease-in-out infinite; }
+
+.code-prompt-wrap{ padding:14px 24px 18px; border-top:1px solid var(--border); background:var(--panel); }
+.code-prompt-bar{ max-width:920px; margin:0 auto; display:flex; align-items:flex-end; gap:10px; background:var(--panel-2); border:1px solid var(--border); border-radius:4px; padding:10px 10px 10px 14px; transition: border-color .18s, box-shadow .18s; }
+.code-prompt-bar:focus-within{ border-color:var(--code-accent); box-shadow:0 0 0 3px var(--code-glow); }
+.code-prompt-bar .cpb-icon{ width:16px; height:16px; color:var(--code-accent); flex-shrink:0; margin-bottom:9px; }
+.code-prompt-bar textarea{ flex:1; background:transparent; border:none; outline:none; resize:none; color:var(--text); font-family:var(--mono); font-size:13px; line-height:1.5; padding:8px 0; max-height:140px; }
+.code-prompt-bar textarea::placeholder{ color:var(--text-faint); }
+.code-prompt-go{ width:34px; height:34px; flex-shrink:0; border-radius:2px; background:var(--code-accent); border:none; display:flex; align-items:center; justify-content:center; cursor:pointer; color:#241704; transition: transform .12s, box-shadow .18s; }
+.code-prompt-go svg{ width:15px; height:15px; }
+.code-prompt-go:hover{ box-shadow:0 0 0 1px var(--code-accent), 0 4px 14px var(--code-glow); transform:translateY(-1px); }
+.code-editor.generating{ position:relative; }
+.code-editor .gen-cursor{ display:inline-block; width:7px; height:14px; background:var(--code-accent); margin-left:2px; vertical-align:middle; animation: tdBounce 0.9s steps(2) infinite; opacity:0.85; }
+
+/* ===== VISUAL WORKSPACE ===== */
+#viewVisual{ --ws-color:var(--visual); --ws-tint:rgba(255,122,198,0.08); --ws-glow:var(--visual-glow); }
+.visual-type-toggle{ display:flex; gap:2px; background:var(--panel-3); border:1px solid var(--border); border-radius:5px; padding:3px; }
+.vt-btn{ display:flex; align-items:center; gap:6px; padding:7px 13px; border-radius:4px; background:transparent; border:none; cursor:pointer; font-family:var(--mono); font-size:11.5px; font-weight:600; color:var(--text-faint); transition: background .15s, color .15s; }
+.vt-btn svg{ width:13px; height:13px; }
+.vt-btn:hover{ color:var(--text-dim); }
+.vt-btn.active{ background:var(--panel-2); color:var(--visual); box-shadow: inset 0 0 0 1px var(--visual); }
+
+.visual-body{ flex:1; display:grid; grid-template-columns: 1fr 280px; overflow:hidden; }
+.visual-main{ overflow-y:auto; padding:22px 28px; display:flex; flex-direction:column; }
+.visual-prompt-row{ display:flex; gap:10px; margin-bottom:16px; align-items:flex-end; }
+.visual-prompt-row textarea{ flex:1; background:var(--panel-2); border:1px solid var(--border); color:var(--text); font-size:13.5px; font-family:var(--sans); padding:12px 14px; outline:none; border-radius:3px; resize:none; max-height:120px; line-height:1.5; transition:border-color .15s; }
+.visual-prompt-row textarea:focus{ border-color:var(--visual); }
+.visual-go{ display:flex; align-items:center; gap:7px; background:var(--visual); color:#14102E; border:none; font-family:var(--mono); font-weight:700; font-size:12px; text-transform:uppercase; padding:13px 18px; cursor:pointer; border-radius:3px; transition: box-shadow .18s, transform .12s; flex-shrink:0; }
+.visual-go svg{ width:14px; height:14px; }
+.visual-go:hover{ box-shadow:0 0 0 1px var(--visual), 0 6px 18px var(--visual-glow); transform:translateY(-1px); }
+
+.visual-options{ display:flex; flex-wrap:wrap; gap:18px; margin-bottom:20px; }
+.vopt-group{ display:flex; align-items:center; gap:7px; flex-wrap:wrap; }
+.vopt-label{ font-family:var(--mono); font-size:10.5px; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-faint); margin-right:2px; }
+.vopt-chip{ border:1px solid var(--border); background:var(--panel-2); color:var(--text-dim); font-size:11.5px; padding:6px 11px; cursor:pointer; border-radius:2px; transition: border-color .15s, color .15s; }
+.vopt-chip:hover{ border-color:var(--visual); color:var(--text); }
+.vopt-chip.active{ border-color:var(--visual); background:var(--panel-3); color:var(--visual); box-shadow: inset 0 0 0 1px var(--visual); }
+
+.visual-status{ display:flex; align-items:center; gap:10px; font-family:var(--mono); font-size:12px; color:var(--text-dim); margin-bottom:18px; }
+.visual-status .vdot{ width:7px; height:7px; border-radius:50%; background:var(--visual); animation:pulse 1.2s ease-in-out infinite; }
+
+.visual-grid{ flex:1; display:grid; grid-template-columns: repeat(2, 1fr); gap:14px; align-content:start; }
+.visual-empty{ grid-column: 1 / -1; height:100%; min-height:240px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; color:var(--text-faint); border:1px dashed var(--border); border-radius:6px; }
+.visual-empty-icon{ width:48px; height:48px; display:flex; align-items:center; justify-content:center; color:var(--text-faint); }
+.visual-empty-icon svg{ width:100%; height:100%; }
+.visual-empty p{ font-size:13px; }
+.visual-tile{ aspect-ratio:1; border-radius:5px; background:linear-gradient(135deg, var(--visual-dim), var(--panel-3)); border:1px solid var(--border); position:relative; overflow:hidden; animation: msgIn 0.3s ease; }
+.visual-tile.wide{ aspect-ratio:16/9; }
+.visual-tile.tall{ aspect-ratio:9/16; }
+.visual-tile::after{ content:''; position:absolute; inset:0; background: radial-gradient(circle at 30% 20%, var(--visual-glow), transparent 60%); }
+.visual-tile-label{ position:absolute; bottom:8px; left:8px; right:8px; font-family:var(--mono); font-size:10px; color:var(--text); background:rgba(0,0,0,0.45); padding:4px 7px; border-radius:3px; backdrop-filter:blur(2px); }
+
+.visual-sidebar{ border-left:1px solid var(--border); background:var(--panel); overflow-y:auto; padding:18px; }
+.visual-sidebar h4{ font-family:var(--mono); font-size:11px; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-faint); margin-bottom:12px; }
+.vhist-card{ display:flex; gap:10px; align-items:center; border:1px solid var(--border); background:var(--panel-2); padding:8px; border-radius:4px; cursor:pointer; transition: border-color .15s, transform .12s; margin-bottom:10px; }
+.vhist-card:hover{ border-color:var(--visual); transform:translateX(2px); }
+.vhist-thumb{ width:42px; height:42px; border-radius:3px; flex-shrink:0; background:linear-gradient(135deg, var(--visual-dim), var(--panel-3)); }
+.vhist-thumb-1{ background:linear-gradient(135deg, var(--signal-dim), var(--panel-3)); }
+.vhist-thumb-2{ background:linear-gradient(135deg, var(--research-dim), var(--panel-3)); }
+.vhist-title{ font-size:12px; color:var(--text); margin-bottom:2px; }
+.vhist-sub{ font-size:10.5px; color:var(--text-faint); font-family:var(--mono); }
+
+/* ============ MODEL PICKER MODAL ============ */
+.modal-backdrop{ position:fixed; inset:0; background:rgba(0,0,0,0.65); display:none; align-items:center; justify-content:center; z-index:100; backdrop-filter: blur(3px); }
+.modal-backdrop.show{ display:flex; animation: fadeIn 0.15s ease; }
+@keyframes fadeIn{ from{opacity:0;} to{opacity:1;} }
+
+.model-modal{ width:680px; max-width:92vw; max-height:84vh; background:var(--panel); border:1px solid var(--border); border-radius:6px; overflow:hidden; display:flex; flex-direction:column; box-shadow:0 40px 100px rgba(0,0,0,0.65); animation: modalIn 0.22s ease; }
+@keyframes modalIn{ from{ opacity:0; transform:scale(0.96) translateY(10px); } to{ opacity:1; transform:scale(1) translateY(0); } }
+.mm-head{ padding:22px 24px 16px; border-bottom:1px solid var(--border); }
+.mm-head h2{ font-size:18px; font-weight:700; margin-bottom:4px; }
+.mm-head p{ font-size:12.5px; color:var(--text-dim); }
+.mm-close{ position:absolute; top:18px; right:18px; background:none; border:none; color:var(--text-faint); cursor:pointer; padding:4px; }
+.mm-close:hover{ color:var(--text); }
+
+.mm-grid{ padding:20px 24px 24px; display:grid; grid-template-columns:1fr 1fr; gap:12px; overflow-y:auto; }
+.model-card{ position:relative; border:1px solid var(--border); background:var(--panel-2); border-radius:5px; padding:16px; cursor:pointer; overflow:hidden; transition: border-color .18s, transform .15s, box-shadow .18s; }
+.model-card::before{ content:''; position:absolute; inset:0; opacity:0; transition:opacity .25s; background: radial-gradient(circle at 100% 0%, var(--mc-glow), transparent 65%); }
+.model-card:hover{ transform:translateY(-3px); border-color:var(--mc-color); box-shadow:0 12px 28px rgba(0,0,0,0.4); }
+.model-card:hover::before{ opacity:1; }
+.model-card.selected{ border-color:var(--mc-color); box-shadow:0 0 0 1px var(--mc-color), 0 0 24px var(--mc-glow); }
+.model-card.locked{ cursor:not-allowed; opacity:0.55; }
+.model-card.locked:hover{ transform:none; box-shadow:none; }
+
+.mc-top{ display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:12px; position:relative; z-index:1; }
+.mc-icon{ width:38px; height:38px; border-radius:5px; display:flex; align-items:center; justify-content:center; font-family:var(--mono); font-size:14px; font-weight:800; background:var(--mc-color); color:var(--bg); }
+.model-card.locked .mc-icon{ background:var(--panel-3); color:var(--text-faint); border:1px solid var(--border); }
+.mc-badge{ font-family:var(--mono); font-size:9px; letter-spacing:0.06em; text-transform:uppercase; padding:3px 7px; border-radius:8px; }
+.mc-badge.live{ background:rgba(94,224,168,0.15); color:var(--signal); border:1px solid var(--signal-dim); }
+.mc-badge.soon{ background:var(--panel-3); color:var(--text-faint); border:1px solid var(--border); }
+
+.mc-name{ font-size:14.5px; font-weight:700; margin-bottom:3px; position:relative; z-index:1; }
+.mc-desc{ font-size:11.5px; color:var(--text-faint); margin-bottom:12px; line-height:1.4; position:relative; z-index:1; }
+.mc-tags{ display:flex; gap:6px; flex-wrap:wrap; position:relative; z-index:1; }
+.mc-tag{ font-family:var(--mono); font-size:9.5px; color:var(--text-dim); background:var(--panel-3); border:1px solid var(--border-soft); padding:2px 7px; border-radius:3px; }
+.mc-check{ position:absolute; top:14px; right:14px; width:18px; height:18px; border-radius:50%; background:var(--mc-color); display:flex; align-items:center; justify-content:center; opacity:0; transition:opacity .15s; z-index:2; }
+.model-card.selected .mc-check{ opacity:1; }
+.mc-check svg{ width:10px; height:10px; color:var(--bg); }
+
+.mc-gemini{ --mc-color:var(--signal); --mc-glow:var(--signal-glow); }
+.mc-gpt{ --mc-color:#7CB4FF; --mc-glow:rgba(124,180,255,0.25); }
+.mc-claude{ --mc-color:#FFB454; --mc-glow:rgba(255,180,84,0.25); }
+.mc-llama{ --mc-color:#5C9DFF; --mc-glow:rgba(92,157,255,0.25); }
+.mc-mistral{ --mc-color:#FF8A65; --mc-glow:rgba(255,138,101,0.25); }
+.mc-grok{ --mc-color:#C792FF; --mc-glow:rgba(199,146,255,0.25); }
+
+@media (max-width: 980px){
+  .app{ grid-template-columns: 0 1fr; }
+  .sidebar{ position:fixed; left:0; top:52px; bottom:0; width:260px; z-index:60; transform:translateX(-100%); transition: transform .2s; }
+  .sidebar.mobile-open{ transform:translateX(0); }
+  .research-body, .code-body, .visual-body{ grid-template-columns: 1fr; }
+  .research-sidebar, .file-tree, .visual-sidebar{ display:none; }
+  .mm-grid{ grid-template-columns:1fr; }
+}
+@media (prefers-reduced-motion: reduce){ *{ animation-duration:0.01ms !important; animation-iteration-count:1 !important; } }
+</style>
+</head>
+<body>
+
+<div class="app" id="app">
+
+  <!-- TOPBAR -->
+  <div class="topbar">
+    <div class="topbar-left">
+      <button class="icon-btn" id="sidebarToggle" aria-label="Toggle sidebar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="1"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+      </button>
+      <div class="brand-mini">
+        <div class="brand-mark-sm"></div>
+        <div class="brand-name-sm">NEXINC</div>
+      </div>
+    </div>
+
+    <div class="mode-switcher" id="modeSwitcher" style="--mode-active-color:var(--signal); --mode-active-glow:var(--signal-glow); --mode-rail-x:0%;">
+      <button class="mode-btn active" data-mode="text">
+        <span class="mode-idx">01</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+        Text
+      </button>
+      <button class="mode-btn" data-mode="visual">
+        <span class="mode-idx">02</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+        Visual
+      </button>
+      <button class="mode-btn" data-mode="codeinc">
+        <span class="mode-idx">03</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+        Codeinc
+      </button>
+    </div>
+
+    <div class="topbar-right">
+      <button class="model-trigger" id="modelTrigger">
+        <div class="model-dot"></div>
+        <span id="modelLabel">Gemini 2.5 Pro</span>
+        <svg class="expand" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/></svg>
+      </button>
+      <button class="icon-btn" id="settingsBtn" title="Settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33h0a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51h0a1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82v0a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+      </button>
+      <div class="avatar-btn">L</div>
+    </div>
+  </div>
+
+  <!-- SIDEBAR -->
+  <div class="sidebar" id="sidebar">
+
+    <!-- ===== TEXT SIDEBAR PANEL ===== -->
+    <div class="sidebar-panel active" id="sidebarText">
+      <div class="sidebar-top">
+        <button class="new-chat-btn" id="newChatBtn">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          New chat
+        </button>
+        <div class="search-wrap">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" placeholder="Search chats…">
+        </div>
+      </div>
+
+      <!-- BIG SECTION TILES -->
+      <div class="section-tiles">
+        <div class="section-tile tile-research" id="tileResearch">
+          <div class="tile-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></div>
+          <div class="tile-text"><div class="tile-name">RESEARCH</div><div class="tile-sub">Live sources & citations</div></div>
+          <svg class="tile-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+        </div>
+        <div class="section-tile tile-private" id="tilePrivate">
+          <div class="tile-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg></div>
+          <div class="tile-text"><div class="tile-name">PRIVATE</div><div class="tile-sub">Encrypted, no training</div></div>
+          <svg class="tile-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+        </div>
+      </div>
+
+      <div class="sidebar-scroll">
+        <div class="section-label">Today</div>
+        <div class="chat-item active" data-view="viewChat">
+          <svg class="ci-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+          <span class="ci-title">New conversation</span>
+        </div>
+        <div class="chat-item" data-view="viewChat">
+          <svg class="ci-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+          <span class="ci-title">Explain transformer attention</span>
+        </div>
+        <div class="section-label">Yesterday</div>
+        <div class="chat-item" data-view="viewChat">
+          <svg class="ci-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+          <span class="ci-title">Debug Next.js hydration error</span>
+        </div>
+      </div>
+
+      <div class="sidebar-bottom">
+        <div style="display:flex; justify-content:space-between;"><span>34 / 100 msgs</span><span>Free</span></div>
+        <div class="usage-bar"><div class="usage-fill"></div></div>
+      </div>
+    </div>
+
+    <!-- ===== VISUAL SIDEBAR PANEL ===== -->
+    <div class="sidebar-panel" id="sidebarVisual">
+      <div class="sidebar-top">
+        <button class="new-chat-btn new-chat-visual" id="newVisualBtn">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          New generation
+        </button>
+        <div class="search-wrap">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" placeholder="Search generations…">
+        </div>
+      </div>
+
+      <div class="section-tiles">
+        <div class="section-tile tile-visual-mode active" id="tileImageGen">
+          <div class="tile-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>
+          <div class="tile-text"><div class="tile-name">IMAGE</div><div class="tile-sub">Stills, art, product shots</div></div>
+          <svg class="tile-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+        </div>
+        <div class="section-tile tile-visual-mode" id="tileVideoGen">
+          <div class="tile-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg></div>
+          <div class="tile-text"><div class="tile-name">VIDEO</div><div class="tile-sub">Clips & motion sequences</div></div>
+          <svg class="tile-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+        </div>
+      </div>
+
+      <div class="sidebar-scroll">
+        <div class="section-label">Recent</div>
+        <div class="chat-item" data-view="viewVisual">
+          <svg class="ci-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+          <span class="ci-title">Isometric node cube, teal</span>
+        </div>
+        <div class="chat-item" data-view="viewVisual">
+          <svg class="ci-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+          <span class="ci-title">Product spin loop, 4s</span>
+        </div>
+      </div>
+
+      <div class="sidebar-bottom">
+        <div style="display:flex; justify-content:space-between;"><span>6 / 50 generations</span><span>Free</span></div>
+        <div class="usage-bar"><div class="usage-fill" style="width:12%; background:var(--visual);"></div></div>
+      </div>
+    </div>
+
+    <!-- ===== CODEINC SIDEBAR PANEL ===== -->
+    <div class="sidebar-panel" id="sidebarCodeinc">
+      <div class="sidebar-top">
+        <button class="new-chat-btn new-chat-code" id="newCodeBtn">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          New project
+        </button>
+        <div class="search-wrap">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" placeholder="Search files…">
+        </div>
+      </div>
+
+      <div class="sidebar-scroll">
+        <div class="section-label">Workspace</div>
+        <div class="chat-item active" data-file="scraper.py">
+          <svg class="ci-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>
+          <span class="ci-title">scraper.py</span>
+        </div>
+        <div class="chat-item" data-file="utils.py">
+          <svg class="ci-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>
+          <span class="ci-title">utils.py</span>
+        </div>
+        <div class="chat-item" data-file="requirements.txt">
+          <svg class="ci-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>
+          <span class="ci-title">requirements.txt</span>
+        </div>
+        <div class="section-label">Recent projects</div>
+        <div class="chat-item">
+          <svg class="ci-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+          <span class="ci-title">headline-scraper</span>
+        </div>
+      </div>
+
+      <div class="sidebar-bottom">
+        <div style="display:flex; justify-content:space-between;"><span>Qwen2.5-Coder-32B</span><span style="color:var(--code-accent);">●  Ready</span></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- WORKSPACE (swappable views) -->
+  <div class="workspace" id="workspace">
+
+    <!-- ===== DEFAULT CHAT VIEW ===== -->
+    <div class="view active" id="viewChat">
+      <div class="chat-scroll" id="chatScroll">
+        <div class="empty-state" id="emptyState">
+          <div class="empty-node">
+            <div class="ecube"><div class="ef et"></div><div class="ef es"></div><div class="ef eb"></div></div>
+          </div>
+          <h2>What are we building today?</h2>
+          <p>Ask anything — or open Research, Private, or Codeinc from the sidebar for a dedicated workspace.</p>
+          <div class="suggest-row">
+            <button class="suggest-chip" data-prompt="Help me draft a cold outreach email">Draft a message</button>
+            <button class="suggest-chip" data-prompt="Explain how isometric CSS transforms work">Explain a concept</button>
+            <button class="suggest-chip" data-prompt="What should I name my new side project?">Brainstorm ideas</button>
+          </div>
+        </div>
+        <div class="chat-inner" id="chatInner" style="display:none;"></div>
+      </div>
+      <div class="composer-wrap">
+        <div class="composer" id="composer">
+          <textarea id="composerInput" placeholder="Message Nexinc…" rows="1"></textarea>
+          <div class="composer-toolbar">
+            <div style="display:flex; gap:4px;">
+              <button class="icon-mini" title="Attach file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg></button>
+              <button class="icon-mini" title="Voice input"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg></button>
+            </div>
+            <button class="send-btn" id="sendBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
+          </div>
+        </div>
+        <div class="composer-hint">Nexinc can make mistakes. Verify important information.</div>
+      </div>
+    </div>
+
+    <!-- ===== RESEARCH WORKSPACE ===== -->
+    <div class="view" id="viewResearch">
+      <div class="ws-header">
+        <div class="ws-header-left">
+          <div class="ws-icon-big"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></div>
+          <div><div class="ws-title">Research</div><div class="ws-subtitle">Searches the live web and grounds answers in sources</div></div>
+        </div>
+        <button class="ws-back" data-back><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>Back to chat</button>
+      </div>
+      <div class="research-body">
+        <div class="research-main">
+          <div class="research-input-row">
+            <input type="text" id="researchQuery" placeholder="What do you want researched?" value="Latest trends in solid-state batteries">
+            <button class="research-go" id="researchGo">Research</button>
+          </div>
+
+          <div class="research-status" id="researchStatus" style="display:none;">
+            <div class="rdot"></div> Researching — scanning sources across the web
+          </div>
+          <div class="research-steps" id="researchSteps" style="display:none;">
+            <div class="research-step" data-step="0"><div class="step-check"></div> Parsing query intent</div>
+            <div class="research-step" data-step="1"><div class="step-check"></div> Searching 24 sources</div>
+            <div class="research-step" data-step="2"><div class="step-check"></div> Cross-checking claims</div>
+            <div class="research-step" data-step="3"><div class="step-check"></div> Drafting grounded answer</div>
+          </div>
+
+          <div class="research-findings" id="researchFindings" style="display:none;">
+            <h3>Summary</h3>
+            <p>Three throughlines stand out across recent coverage: rising energy density from new cathode chemistries <span class="cite-chip">1</span>, a shift toward sulfide-based solid electrolytes for better safety <span class="cite-chip">2</span>, and early but real progress on manufacturing scale-up <span class="cite-chip">3</span>.</p>
+            <p>Most analysts still peg mass-market EV adoption several years out, with current deployment concentrated in premium vehicle tiers and consumer electronics pilots <span class="cite-chip">4</span>.</p>
+          </div>
+        </div>
+        <div class="research-sidebar">
+          <h4>Sources</h4>
+          <div id="sourceCards">
+            <div class="source-card"><div class="sc-domain">reuters.com</div><div class="sc-title">Battery makers race to scale solid-state production</div><div class="sc-snippet">Coverage of manufacturing pilots moving from lab to limited production lines.</div></div>
+            <div class="source-card"><div class="sc-domain">nature.com</div><div class="sc-title">Sulfide electrolytes show improved thermal stability</div><div class="sc-snippet">Peer-reviewed comparison of electrolyte chemistries and safety margins.</div></div>
+            <div class="source-card"><div class="sc-domain">techcrunch.com</div><div class="sc-title">Why solid-state batteries keep missing deadlines</div><div class="sc-snippet">Analysis of the gap between lab breakthroughs and shippable products.</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== PRIVATE WORKSPACE ===== -->
+    <div class="view" id="viewPrivate">
+      <div class="ws-header">
+        <div class="ws-header-left">
+          <div class="ws-icon-big"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg></div>
+          <div><div class="ws-title">Private</div><div class="ws-subtitle">Encrypted client-side · excluded from training</div></div>
+        </div>
+        <button class="ws-back" data-back><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>Back to chat</button>
+      </div>
+
+      <div class="private-body" id="privateIntro">
+        <div class="private-shield"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg></div>
+        <h2>Start a private conversation</h2>
+        <p>Private chats are encrypted on your device, never used for model training, and only ever appear in this Private section — not in your regular history.</p>
+        <div class="private-feature-list">
+          <div class="priv-feature"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> No training, no retention beyond this session</div>
+          <div class="priv-feature"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Doesn't sync to other devices automatically</div>
+          <div class="priv-feature"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Stored separately from your regular chat history</div>
+        </div>
+        <button class="private-cta" id="startPrivateBtn">Start private chat</button>
+      </div>
+
+      <div class="private-active-chat" id="privateActiveChat">
+        <div class="private-chat-scroll">
+          <div class="private-banner"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg> This conversation is private and encrypted</div>
+          <div id="privateChatInner" style="display:flex; flex-direction:column; gap:22px;"></div>
+        </div>
+        <div class="composer-wrap">
+          <div class="composer">
+            <textarea id="privateInput" placeholder="Message privately…" rows="1"></textarea>
+            <div class="composer-toolbar">
+              <div></div>
+              <button class="send-btn" id="privateSendBtn" style="background:var(--private);"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
+            </div>
+          </div>
+          <div class="composer-hint">Encrypted · not used for training</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== CODEINC WORKSPACE ===== -->
+    <div class="view" id="viewCode">
+      <div class="ws-header">
+        <div class="ws-header-left">
+          <div class="ws-icon-big"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></div>
+          <div><div class="ws-title">Codeinc</div><div class="ws-subtitle">Generates code from a prompt using the coding model</div></div>
+        </div>
+        <div class="code-model-tag">
+          <div class="cmt-dot"></div> Qwen2.5-Coder-32B
+        </div>
+      </div>
+      <div class="code-body">
+        <div class="file-tree">
+          <h4>Generated files</h4>
+          <div class="file-row active" data-file="scraper.py"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg> scraper.py</div>
+          <div class="file-row" data-file="utils.py"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg> utils.py</div>
+          <div class="file-row" data-file="requirements.txt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg> requirements.txt</div>
+        </div>
+        <div class="code-main">
+          <div class="code-tabs">
+            <div class="code-tab active">scraper.py</div>
+          </div>
+          <div class="code-editor" id="codeEditor"><span class="ln">1</span><span class="kw">import</span> requests
+<span class="ln">2</span><span class="kw">from</span> bs4 <span class="kw">import</span> BeautifulSoup
+<span class="ln">3</span>
+<span class="ln">4</span><span class="kw">def</span> <span class="fn">fetch_headlines</span>(url):
+<span class="ln">5</span>    res = requests.get(url, timeout=<span class="num">10</span>)
+<span class="ln">6</span>    soup = BeautifulSoup(res.text, <span class="str">"html.parser"</span>)
+<span class="ln">7</span>    <span class="kw">return</span> [h.get_text() <span class="kw">for</span> h <span class="kw">in</span> soup.select(<span class="str">"h2.headline"</span>)]
+<span class="ln">8</span>
+<span class="ln">9</span><span class="com"># quick test run</span>
+<span class="ln">10</span><span class="kw">if</span> __name__ == <span class="str">"__main__"</span>:
+<span class="ln">11</span>    <span class="kw">for</span> title <span class="kw">in</span> fetch_headlines(<span class="str">"https://example-news.com"</span>):
+<span class="ln">12</span>        <span class="fn">print</span>(title)</div>
+          <div class="code-actions-row">
+            <div class="code-gen-status" id="codeGenStatus">Generated · 12 lines · Python</div>
+            <div class="code-actions">
+              <button class="code-action-btn" id="copyCodeBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg> Copy</button>
+              <button class="code-action-btn" id="insertCodeBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg> Insert into file</button>
+              <button class="code-action-btn" id="regenBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg> Regenerate</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="code-prompt-wrap">
+        <div class="code-prompt-bar" id="codePromptBar">
+          <svg class="cpb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+          <textarea id="codePromptInput" rows="1" placeholder="Describe the code you want generated — a function, a file, a refactor…"></textarea>
+          <button class="code-prompt-go" id="codePromptGo">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+          </button>
+        </div>
+        <div class="composer-hint">Codeinc generates code — it doesn't execute it. Run generated code in your own environment.</div>
+      </div>
+    </div>
+
+    <!-- ===== VISUAL WORKSPACE ===== -->
+    <div class="view" id="viewVisual">
+      <div class="ws-header">
+        <div class="ws-header-left">
+          <div class="ws-icon-big" style="background:var(--visual); box-shadow:0 0 24px var(--visual-glow);"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>
+          <div><div class="ws-title">Visual</div><div class="ws-subtitle" id="visualSubtitle">Generate images from a text prompt</div></div>
+        </div>
+        <div class="visual-type-toggle" id="visualTypeToggle">
+          <button class="vt-btn active" data-vtype="image">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+            Image
+          </button>
+          <button class="vt-btn" data-vtype="video">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+            Video
+          </button>
+        </div>
+      </div>
+
+      <div class="visual-body">
+        <div class="visual-main">
+          <div class="visual-prompt-row">
+            <textarea id="visualPrompt" rows="1" placeholder="Describe the image you want to generate…">Isometric 3D node cube, charcoal background, signal-green glow, studio lighting</textarea>
+            <button class="visual-go" id="visualGo">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l1.5 5.5L19 9l-5.5 1.5L12 16l-1.5-5.5L5 9l5.5-1.5z"/></svg>
+              <span id="visualGoLabel">Generate</span>
+            </button>
+          </div>
+
+          <div class="visual-options">
+            <div class="vopt-group">
+              <span class="vopt-label">Style</span>
+              <button class="vopt-chip active" data-opt="style">Photoreal</button>
+              <button class="vopt-chip" data-opt="style">Isometric</button>
+              <button class="vopt-chip" data-opt="style">Illustration</button>
+              <button class="vopt-chip" data-opt="style">3D render</button>
+            </div>
+            <div class="vopt-group" id="aspectGroup">
+              <span class="vopt-label">Aspect</span>
+              <button class="vopt-chip active" data-opt="aspect">1:1</button>
+              <button class="vopt-chip" data-opt="aspect">16:9</button>
+              <button class="vopt-chip" data-opt="aspect">9:16</button>
+            </div>
+            <div class="vopt-group" id="durationGroup" style="display:none;">
+              <span class="vopt-label">Duration</span>
+              <button class="vopt-chip" data-opt="duration">4s</button>
+              <button class="vopt-chip active" data-opt="duration">8s</button>
+              <button class="vopt-chip" data-opt="duration">12s</button>
+            </div>
+          </div>
+
+          <div class="visual-status" id="visualStatus" style="display:none;">
+            <div class="vdot"></div> <span id="visualStatusText">Rendering — composing scene</span>
+          </div>
+
+          <div class="visual-grid" id="visualGrid">
+            <div class="visual-empty" id="visualEmpty">
+              <div class="visual-empty-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>
+              <p>Generated images will appear here</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="visual-sidebar">
+          <h4>History</h4>
+          <div id="visualHistoryCards">
+            <div class="vhist-card">
+              <div class="vhist-thumb vhist-thumb-1"></div>
+              <div class="vhist-meta"><div class="vhist-title">Node cube, teal glow</div><div class="vhist-sub">Isometric · 1:1</div></div>
+            </div>
+            <div class="vhist-card">
+              <div class="vhist-thumb vhist-thumb-2"></div>
+              <div class="vhist-meta"><div class="vhist-title">Console UI mockup</div><div class="vhist-sub">Photoreal · 16:9</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- MODEL PICKER MODAL -->
+<div class="modal-backdrop" id="modelBackdrop">
+  <div class="model-modal">
+    <div class="mm-head">
+      <button class="mm-close" id="closeModelModal"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+      <h2>Choose a model</h2>
+      <p>Switch anytime — your conversation carries over.</p>
+    </div>
+    <div class="mm-grid">
+      <div class="model-card mc-gemini selected" data-model="Gemini 2.5 Pro">
+        <div class="mc-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
+        <div class="mc-top"><div class="mc-icon">G</div><span class="mc-badge live">Live</span></div>
+        <div class="mc-name">Gemini 2.5 Pro</div>
+        <div class="mc-desc">Multimodal reasoning, strong at long-context and code.</div>
+        <div class="mc-tags"><span class="mc-tag">Vision</span><span class="mc-tag">1M ctx</span><span class="mc-tag">Code</span></div>
+      </div>
+      <div class="model-card mc-gpt locked" data-model="GPT-5">
+        <div class="mc-top"><div class="mc-icon">O</div><span class="mc-badge soon">Soon</span></div>
+        <div class="mc-name">GPT-5</div>
+        <div class="mc-desc">OpenAI's flagship general-purpose model.</div>
+        <div class="mc-tags"><span class="mc-tag">Vision</span><span class="mc-tag">Tools</span></div>
+      </div>
+      <div class="model-card mc-claude locked" data-model="Claude Opus">
+        <div class="mc-top"><div class="mc-icon">C</div><span class="mc-badge soon">Soon</span></div>
+        <div class="mc-name">Claude Opus</div>
+        <div class="mc-desc">Anthropic's most capable model for complex reasoning.</div>
+        <div class="mc-tags"><span class="mc-tag">Reasoning</span><span class="mc-tag">Writing</span></div>
+      </div>
+      <div class="model-card mc-llama locked" data-model="Llama 4">
+        <div class="mc-top"><div class="mc-icon">L</div><span class="mc-badge soon">Soon</span></div>
+        <div class="mc-name">Llama 4</div>
+        <div class="mc-desc">Meta's open-weight model, tuned for speed.</div>
+        <div class="mc-tags"><span class="mc-tag">Open</span><span class="mc-tag">Fast</span></div>
+      </div>
+      <div class="model-card mc-mistral locked" data-model="Mistral Large">
+        <div class="mc-top"><div class="mc-icon">M</div><span class="mc-badge soon">Soon</span></div>
+        <div class="mc-name">Mistral Large</div>
+        <div class="mc-desc">Efficient European model, strong multilingual support.</div>
+        <div class="mc-tags"><span class="mc-tag">Multilingual</span></div>
+      </div>
+      <div class="model-card mc-grok locked" data-model="Grok 3">
+        <div class="mc-top"><div class="mc-icon">X</div><span class="mc-badge soon">Soon</span></div>
+        <div class="mc-name">Grok 3</div>
+        <div class="mc-desc">xAI's model with real-time data access.</div>
+        <div class="mc-tags"><span class="mc-tag">Realtime</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  // ---------- Sidebar toggle (mobile) ----------
+  document.getElementById('sidebarToggle').addEventListener('click', () => {
+    document.getElementById('sidebar').classList.toggle('mobile-open');
+  });
+
+  // ---------- View switching ----------
+  const views = document.querySelectorAll('.view');
+  function showView(id){
+    views.forEach(v => v.classList.toggle('active', v.id === id));
+  }
+
+  // ---------- Top-level mode switching (Text / Visual / Codeinc) ----------
+  const modeDefaultView = { text: 'viewChat', visual: 'viewVisual', codeinc: 'viewCode' };
+  const modeDefaultSidebar = { text: 'sidebarText', visual: 'sidebarVisual', codeinc: 'sidebarCodeinc' };
+  const modeRailX = { text: '0%', visual: '100%', codeinc: '200%' };
+  const modeColorVar = { text: ['var(--signal)', 'var(--signal-glow)'], visual: ['var(--visual)', 'var(--visual-glow)'], codeinc: ['var(--code-accent)', 'var(--code-glow)'] };
+  let currentMode = 'text';
+
+  function switchMode(mode){
+    currentMode = mode;
+    document.querySelectorAll('.mode-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+    document.querySelectorAll('.sidebar-panel').forEach(p => p.classList.toggle('active', p.id === modeDefaultSidebar[mode]));
+    showView(modeDefaultView[mode]);
+    markTileActive(null);
+    const modeSwitcher = document.getElementById('modeSwitcher');
+    modeSwitcher.style.setProperty('--mode-rail-x', modeRailX[mode]);
+    modeSwitcher.style.setProperty('--mode-active-color', modeColorVar[mode][0]);
+    modeSwitcher.style.setProperty('--mode-active-glow', modeColorVar[mode][1]);
+    // close mobile sidebar after switching on small screens
+    document.getElementById('sidebar').classList.remove('mobile-open');
+  }
+  document.querySelectorAll('.mode-btn').forEach(btn => {
+    btn.addEventListener('click', () => switchMode(btn.dataset.mode));
+  });
+
+  document.querySelectorAll('[data-back]').forEach(btn => btn.addEventListener('click', () => showView('viewChat')));
+  document.getElementById('tileResearch').addEventListener('click', () => { showView('viewResearch'); markTileActive('tileResearch'); });
+  document.getElementById('tilePrivate').addEventListener('click', () => { showView('viewPrivate'); markTileActive('tilePrivate'); });
+  document.querySelectorAll('.chat-item[data-view]').forEach(item => {
+    item.addEventListener('click', () => {
+      document.querySelectorAll('.chat-item').forEach(i => i.classList.remove('active'));
+      item.classList.add('active');
+      showView(item.dataset.view || 'viewChat');
+      markTileActive(null);
+    });
+  });
+  function markTileActive(id){
+    document.querySelectorAll('.section-tile').forEach(t => t.classList.toggle('active', t.id === id));
+  }
+
+  // ---------- Model picker modal ----------
+  const modelTrigger = document.getElementById('modelTrigger');
+  const modelBackdrop = document.getElementById('modelBackdrop');
+  const modelLabel = document.getElementById('modelLabel');
+  modelTrigger.addEventListener('click', () => modelBackdrop.classList.add('show'));
+  document.getElementById('closeModelModal').addEventListener('click', () => modelBackdrop.classList.remove('show'));
+  modelBackdrop.addEventListener('click', (e) => { if (e.target === modelBackdrop) modelBackdrop.classList.remove('show'); });
+  document.querySelectorAll('.model-card').forEach(card => {
+    card.addEventListener('click', () => {
+      if (card.classList.contains('locked')){
+        card.style.animation = 'none'; card.offsetHeight; card.style.animation = 'shakeSm 0.4s';
+        return;
+      }
+      document.querySelectorAll('.model-card').forEach(c => c.classList.remove('selected'));
+      card.classList.add('selected');
+      modelLabel.textContent = card.dataset.model;
+      setTimeout(() => modelBackdrop.classList.remove('show'), 220);
+    });
+  });
+
+  // ---------- Default chat logic ----------
+  const emptyState = document.getElementById('emptyState');
+  const chatInner = document.getElementById('chatInner');
+  const chatScroll = document.getElementById('chatScroll');
+  const composerInput = document.getElementById('composerInput');
+  const sendBtn = document.getElementById('sendBtn');
+
+  function escapeHtml(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+  function addMsg(container, who, text, scrollEl){
+    const div = document.createElement('div');
+    div.className = 'msg ' + who;
+    div.innerHTML = `
+      <div class="msg-avatar">${who === 'user' ? 'L' : 'N'}</div>
+      <div class="msg-body">
+        <div class="msg-name">${who === 'user' ? 'You' : 'Nexinc'}</div>
+        <div class="msg-text"><p>${escapeHtml(text)}</p></div>
+      </div>`;
+    container.appendChild(div);
+    scrollEl.scrollTop = scrollEl.scrollHeight;
+    return div;
+  }
+  function addTyping(container, scrollEl){
+    const div = document.createElement('div');
+    div.className = 'msg assistant';
+    div.innerHTML = `<div class="msg-avatar">N</div><div class="msg-body"><div class="msg-name">Nexinc</div><div class="typing-dots"><span></span><span></span><span></span></div></div>`;
+    container.appendChild(div);
+    scrollEl.scrollTop = scrollEl.scrollHeight;
+    return div;
+  }
+
+  function handleSend(){
+    const text = composerInput.value.trim();
+    if (!text) return;
+    if (emptyState.style.display !== 'none'){ emptyState.style.display = 'none'; chatInner.style.display = 'flex'; }
+    addMsg(chatInner, 'user', text, chatScroll);
+    composerInput.value = ''; composerInput.style.height = 'auto';
+    const typing = addTyping(chatInner, chatScroll);
+    setTimeout(() => {
+      typing.remove();
+      addMsg(chatInner, 'assistant', "Here's a thought on that — happy to go deeper into any part of it.", chatScroll);
+    }, 1200);
+  }
+  sendBtn.addEventListener('click', handleSend);
+  composerInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); handleSend(); } });
+  composerInput.addEventListener('input', () => { composerInput.style.height = 'auto'; composerInput.style.height = Math.min(composerInput.scrollHeight, 200) + 'px'; });
+
+  document.querySelectorAll('.suggest-chip').forEach(chip => {
+    chip.addEventListener('click', () => { composerInput.value = chip.dataset.prompt; handleSend(); });
+  });
+  document.getElementById('newChatBtn').addEventListener('click', () => {
+    chatInner.innerHTML = ''; chatInner.style.display = 'none'; emptyState.style.display = 'flex';
+    showView('viewChat'); markTileActive(null);
+  });
+  document.getElementById('newVisualBtn').addEventListener('click', () => {
+    document.getElementById('visualPrompt').value = '';
+    document.querySelectorAll('.visual-tile').forEach(t => t.remove());
+    document.getElementById('visualEmpty').style.display = 'flex';
+    showView('viewVisual');
+  });
+  document.getElementById('newCodeBtn').addEventListener('click', () => {
+    showView('viewCode');
+    codeEditor.classList.remove('generating');
+    codeEditor.innerHTML = '<span class="com" style="color:var(--text-faint);">// Describe what to generate below — code will appear here.</span>';
+    codeGenStatus.textContent = 'Awaiting prompt';
+  });
+
+  // ---------- Research workspace logic ----------
+  const researchGo = document.getElementById('researchGo');
+  const researchStatus = document.getElementById('researchStatus');
+  const researchSteps = document.getElementById('researchSteps');
+  const researchFindings = document.getElementById('researchFindings');
+
+  researchGo.addEventListener('click', () => {
+    researchFindings.style.display = 'none';
+    researchStatus.style.display = 'flex';
+    researchSteps.style.display = 'flex';
+    document.querySelectorAll('.research-step').forEach(s => s.classList.remove('done','active'));
+
+    const steps = document.querySelectorAll('.research-step');
+    let i = 0;
+    function advance(){
+      if (i > 0) steps[i-1].classList.remove('active'), steps[i-1].classList.add('done'),
+        steps[i-1].querySelector('.step-check').innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>';
+      if (i < steps.length){
+        steps[i].classList.add('active');
+        i++;
+        setTimeout(advance, 650);
+      } else {
+        researchStatus.style.display = 'none';
+        researchFindings.style.display = 'block';
+      }
+    }
+    advance();
+  });
+
+  // ---------- Private workspace logic ----------
+  const startPrivateBtn = document.getElementById('startPrivateBtn');
+  const privateIntro = document.getElementById('privateIntro');
+  const privateActiveChat = document.getElementById('privateActiveChat');
+  const privateChatInner = document.getElementById('privateChatInner');
+  const privateChatScroll = document.querySelector('.private-chat-scroll');
+  const privateInput = document.getElementById('privateInput');
+  const privateSendBtn = document.getElementById('privateSendBtn');
+
+  startPrivateBtn.addEventListener('click', () => {
+    privateIntro.style.display = 'none';
+    privateActiveChat.classList.add('show');
+  });
+  function handlePrivateSend(){
+    const text = privateInput.value.trim();
+    if (!text) return;
+    addMsg(privateChatInner, 'user', text, privateChatScroll);
+    privateInput.value = '';
+    const typing = addTyping(privateChatInner, privateChatScroll);
+    setTimeout(() => {
+      typing.remove();
+      addMsg(privateChatInner, 'assistant', "Got it — this stays in your private, encrypted thread.", privateChatScroll);
+    }, 1100);
+  }
+  privateSendBtn.addEventListener('click', handlePrivateSend);
+  privateInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); handlePrivateSend(); } });
+
+  // ---------- Codeinc workspace logic (code generation, not execution) ----------
+  const codeEditor = document.getElementById('codeEditor');
+  const codeGenStatus = document.getElementById('codeGenStatus');
+  const codePromptInput = document.getElementById('codePromptInput');
+  const codePromptGo = document.getElementById('codePromptGo');
+  const copyCodeBtn = document.getElementById('copyCodeBtn');
+  const insertCodeBtn = document.getElementById('insertCodeBtn');
+  const regenBtn = document.getElementById('regenBtn');
+
+  const codeSamples = [
+    { lang: 'Python', lines:
+`<span class="ln">1</span><span class="kw">import</span> requests
+<span class="ln">2</span><span class="kw">from</span> bs4 <span class="kw">import</span> BeautifulSoup
+<span class="ln">3</span>
+<span class="ln">4</span><span class="kw">def</span> <span class="fn">fetch_headlines</span>(url):
+<span class="ln">5</span>    res = requests.get(url, timeout=<span class="num">10</span>)
+<span class="ln">6</span>    soup = BeautifulSoup(res.text, <span class="str">"html.parser"</span>)
+<span class="ln">7</span>    <span class="kw">return</span> [h.get_text() <span class="kw">for</span> h <span class="kw">in</span> soup.select(<span class="str">"h2.headline"</span>)]
+<span class="ln">8</span>
+<span class="ln">9</span><span class="com"># quick test run</span>
+<span class="ln">10</span><span class="kw">if</span> __name__ == <span class="str">"__main__"</span>:
+<span class="ln">11</span>    <span class="kw">for</span> title <span class="kw">in</span> fetch_headlines(<span class="str">"https://example-news.com"</span>):
+<span class="ln">12</span>        <span class="fn">print</span>(title)` },
+    { lang: 'Python', lines:
+`<span class="ln">1</span><span class="kw">from</span> dataclasses <span class="kw">import</span> dataclass
+<span class="ln">2</span>
+<span class="ln">3</span><span class="com"># represents a single retry policy for network calls</span>
+<span class="ln">4</span><span class="kw">@dataclass</span>
+<span class="ln">5</span><span class="kw">class</span> <span class="fn">RetryPolicy</span>:
+<span class="ln">6</span>    max_attempts: <span class="fn">int</span> = <span class="num">3</span>
+<span class="ln">7</span>    backoff_seconds: <span class="fn">float</span> = <span class="num">0.5</span>
+<span class="ln">8</span>
+<span class="ln">9</span>    <span class="kw">def</span> <span class="fn">delay_for</span>(self, attempt: <span class="fn">int</span>) -> <span class="fn">float</span>:
+<span class="ln">10</span>        <span class="kw">return</span> self.backoff_seconds * (<span class="num">2</span> ** attempt)` }
+  ];
+  let sampleIndex = 0;
+
+  function streamCode(sample){
+    codeEditor.classList.add('generating');
+    codeEditor.innerHTML = '<span class="gen-cursor"></span>';
+    codeGenStatus.textContent = 'Generating…';
+    const fullLines = sample.lines.split('\n');
+    let i = 0;
+    function nextLine(){
+      if (i < fullLines.length){
+        codeEditor.innerHTML = fullLines.slice(0, i + 1).join('\n') + '<span class="gen-cursor"></span>';
+        codeEditor.scrollTop = codeEditor.scrollHeight;
+        i++;
+        setTimeout(nextLine, 90);
+      } else {
+        codeEditor.innerHTML = fullLines.join('\n');
+        codeEditor.classList.remove('generating');
+        codeGenStatus.textContent = `Generated · ${fullLines.length} lines · ${sample.lang}`;
+      }
+    }
+    nextLine();
+  }
+
+  function handleCodeGenerate(){
+    const prompt = codePromptInput.value.trim();
+    if (!prompt) return;
+    codePromptInput.value = '';
+    codePromptInput.style.height = 'auto';
+    sampleIndex = (sampleIndex + 1) % codeSamples.length;
+    streamCode(codeSamples[sampleIndex]);
+  }
+  codePromptGo.addEventListener('click', handleCodeGenerate);
+  codePromptInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); handleCodeGenerate(); } });
+  codePromptInput.addEventListener('input', () => { codePromptInput.style.height = 'auto'; codePromptInput.style.height = Math.min(codePromptInput.scrollHeight, 140) + 'px'; });
+
+  regenBtn.addEventListener('click', () => {
+    sampleIndex = (sampleIndex + 1) % codeSamples.length;
+    streamCode(codeSamples[sampleIndex]);
+  });
+
+  function flashStatus(btn, label){
+    const original = btn.innerHTML;
+    btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> ${label}`;
+    setTimeout(() => { btn.innerHTML = original; }, 1300);
+  }
+  copyCodeBtn.addEventListener('click', () => {
+    const text = codeEditor.textContent.replace(/^\d+/gm, '').trim();
+    navigator.clipboard?.writeText(text).catch(() => {});
+    flashStatus(copyCodeBtn, 'Copied');
+  });
+  insertCodeBtn.addEventListener('click', () => flashStatus(insertCodeBtn, 'Inserted'));
+
+  document.querySelectorAll('.file-row').forEach(row => {
+    row.addEventListener('click', () => {
+      document.querySelectorAll('.file-row').forEach(r => r.classList.remove('active'));
+      row.classList.add('active');
+      document.querySelectorAll('.chat-item[data-file]').forEach(r => r.classList.toggle('active', r.dataset.file === row.dataset.file));
+    });
+  });
+  document.querySelectorAll('.chat-item[data-file]').forEach(item => {
+    item.addEventListener('click', () => {
+      document.querySelectorAll('.chat-item[data-file]').forEach(r => r.classList.remove('active'));
+      item.classList.add('active');
+      const match = document.querySelector(`.file-row[data-file="${item.dataset.file}"]`);
+      if (match){ document.querySelectorAll('.file-row').forEach(r => r.classList.remove('active')); match.classList.add('active'); }
+    });
+  });
+
+  // ---------- Visual workspace logic ----------
+  const visualTypeToggle = document.getElementById('visualTypeToggle');
+  const visualSubtitle = document.getElementById('visualSubtitle');
+  const aspectGroup = document.getElementById('aspectGroup');
+  const durationGroup = document.getElementById('durationGroup');
+  const visualPrompt = document.getElementById('visualPrompt');
+  const visualGo = document.getElementById('visualGo');
+  const visualStatus = document.getElementById('visualStatus');
+  const visualStatusText = document.getElementById('visualStatusText');
+  const visualGrid = document.getElementById('visualGrid');
+  const visualEmpty = document.getElementById('visualEmpty');
+  let visualType = 'image';
+
+  function setVisualType(type){
+    visualType = type;
+    document.querySelectorAll('.vt-btn').forEach(b => b.classList.toggle('active', b.dataset.vtype === type));
+    document.getElementById('tileImageGen').classList.toggle('active', type === 'image');
+    document.getElementById('tileVideoGen').classList.toggle('active', type === 'video');
+    if (type === 'image'){
+      visualSubtitle.textContent = 'Generate images from a text prompt';
+      visualPrompt.placeholder = 'Describe the image you want to generate…';
+      aspectGroup.style.display = 'flex';
+      durationGroup.style.display = 'none';
+    } else {
+      visualSubtitle.textContent = 'Generate short video clips from a text prompt';
+      visualPrompt.placeholder = 'Describe the video clip you want to generate…';
+      aspectGroup.style.display = 'flex';
+      durationGroup.style.display = 'flex';
+    }
+  }
+  document.querySelectorAll('.vt-btn').forEach(btn => btn.addEventListener('click', () => setVisualType(btn.dataset.vtype)));
+  document.getElementById('tileImageGen').addEventListener('click', () => setVisualType('image'));
+  document.getElementById('tileVideoGen').addEventListener('click', () => setVisualType('video'));
+
+  document.querySelectorAll('.vopt-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const group = chip.closest('.vopt-group');
+      group.querySelectorAll('.vopt-chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+    });
+  });
+
+  visualGo.addEventListener('click', () => {
+    const aspectChip = aspectGroup.querySelector('.vopt-chip.active');
+    const aspect = aspectChip ? aspectChip.textContent : '1:1';
+    const styleChip = document.querySelector('.vopt-group .vopt-chip.active');
+    const styleLabel = styleChip ? styleChip.textContent : 'Photoreal';
+
+    visualEmpty.style.display = 'none';
+    visualStatus.style.display = 'flex';
+    visualStatusText.textContent = visualType === 'image' ? 'Rendering — composing scene' : 'Rendering — generating frames';
+
+    setTimeout(() => {
+      visualStatus.style.display = 'none';
+      const count = visualType === 'image' ? 4 : 2;
+      for (let i = 0; i < count; i++){
+        const tile = document.createElement('div');
+        tile.className = 'visual-tile' + (aspect === '16:9' ? ' wide' : aspect === '9:16' ? ' tall' : '');
+        tile.innerHTML = `<div class="visual-tile-label">${styleLabel} · ${aspect}</div>`;
+        visualGrid.appendChild(tile);
+      }
+    }, visualType === 'image' ? 1300 : 2200);
+  });
+
+  // shake keyframe for locked items
+  const styleEl = document.createElement('style');
+  styleEl.textContent = `@keyframes shakeSm{0%,100%{transform:translateX(0);}25%{transform:translateX(-4px);}75%{transform:translateX(4px);}}`;
+  document.head.appendChild(styleEl);
+})();
+</script>
+</body>
+</html>

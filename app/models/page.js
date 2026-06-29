@@ -27,11 +27,27 @@ const ultimateModels = [
   { key: "gemini-2.5-flash-tts", label: "Gemini 2.5 Flash TTS (Google)", provider: "gemini", providerModelId: "gemini-2.5-flash-tts", tier: "ultimate" },
   { key: "gemini-2.5-pro-tts", label: "Gemini 2.5 Pro TTS (Google)", provider: "gemini", providerModelId: "gemini-2.5-pro-tts", tier: "ultimate" },
   { key: "gpt-4o", label: "GPT-4o (OpenAI / ChatGPT)", provider: "openai", providerModelId: "gpt-4o", tier: "ultimate" },
+  { key: "o1", label: "OpenAI o1 (OpenAI)", provider: "openai", providerModelId: "o1", tier: "ultimate" },
+  { key: "o3-mini", label: "OpenAI o3-mini (OpenAI)", provider: "openai", providerModelId: "o3-mini", tier: "ultimate" },
+  { key: "gpt-oss-120b", label: "OpenAI GPT OSS", provider: "cerebras", providerModelId: "gpt-oss-120b", tier: "ultimate" },
+  { key: "zai-glm-4.7", label: "Z.ai GLM 4.7", provider: "cerebras", providerModelId: "zai-glm-4.7", tier: "ultimate" },
   { key: "claude-3.5-sonnet", label: "Claude 3.5 Sonnet (Anthropic)", provider: "anthropic", providerModelId: "claude-3-5-sonnet-latest", tier: "ultimate" },
   { key: "perplexity-sonar", label: "Sonar Large (Perplexity)", provider: "perplexity", providerModelId: "sonar", tier: "ultimate" },
   { key: "deepseek-r1", label: "DeepSeek R1 (DeepSeek)", provider: "deepseek", providerModelId: "deepseek-reasoner", tier: "ultimate" },
   { key: "custom-cloud-gpu", label: "Custom Cloud GPU Model", provider: "mock", providerModelId: "custom-cloud-gpu", tier: "ultimate" },
   { key: "my-local-model", label: "My Local Model", provider: "mock", providerModelId: "my-local-model", tier: "ultimate" },
+
+  // Image Generation Models
+  { key: "dall-e-3", label: "DALL-E 3 (OpenAI)", provider: "openai", providerModelId: "dall-e-3", tier: "ultimate", type: "image-gen", desc: "OpenAI's state-of-the-art image generator, excellent at text rendering and prompt adherence.", tags: ["Image Gen", "Text-in-Image"] },
+  { key: "flux-schnell", label: "Flux.1 Schnell (BFL)", provider: "black-forest-labs", providerModelId: "flux-schnell", tier: "ultimate", type: "image-gen", desc: "Ultra-fast open-weights image generator, producing highly detailed images in seconds.", tags: ["Image Gen", "Ultra-Fast"] },
+  { key: "midjourney-v6", label: "Midjourney v6", provider: "midjourney", providerModelId: "midjourney-v6", tier: "ultimate", type: "image-gen", desc: "Flagship artistic image generator, renowned for cinematic quality and photorealism.", tags: ["Image Gen", "Artistic"] },
+  { key: "stable-diffusion-3.5", label: "Stable Diffusion 3.5", provider: "stability-ai", providerModelId: "stable-diffusion-3.5", tier: "ultimate", type: "image-gen", desc: "Highly versatile open image generator, strong at complex layout and anatomy.", tags: ["Image Gen", "Versatile"] },
+
+  // Video Generation Models
+  { key: "sora", label: "Sora (OpenAI)", provider: "openai", providerModelId: "sora", tier: "ultimate", type: "video-gen", desc: "Creates highly realistic and imaginative scenes from text instructions up to 60 seconds.", tags: ["Video Gen", "Cinematic"] },
+  { key: "kling-1.5", label: "Kling 1.5", provider: "kling-ai", providerModelId: "kling-1.5", tier: "ultimate", type: "video-gen", desc: "High-fidelity video generator, strong physics modeling and motion dynamics.", tags: ["Video Gen", "Physics Sync"] },
+  { key: "runway-gen3", label: "Runway Gen-3 Alpha", provider: "runway", providerModelId: "runway-gen3", tier: "ultimate", type: "video-gen", desc: "Professional text-to-video generator, exceptional photorealism and camera control.", tags: ["Video Gen", "HD Quality"] },
+  { key: "luma-dream-machine", label: "Luma Dream Machine", provider: "luma-ai", providerModelId: "luma-dream-machine", tier: "ultimate", type: "video-gen", desc: "Rapidly generates high-quality cinematic clips with smooth motion and coherence.", tags: ["Video Gen", "Coherent"] },
 ];
 
 export default function ModelsCatalogPage() {
@@ -41,6 +57,19 @@ export default function ModelsCatalogPage() {
 
   // Helper to map model key to tags/desc
   const getModelTagsAndDesc = (m) => {
+    if (m.type === "image-gen") {
+      return {
+        desc: m.desc || "State-of-the-art AI image generator.",
+        tags: m.tags || ["Image Gen", "Creative"]
+      };
+    }
+    if (m.type === "video-gen") {
+      return {
+        desc: m.desc || "High-fidelity AI video generator.",
+        tags: m.tags || ["Video Gen", "Cinematic"]
+      };
+    }
+
     let desc = "High-performance AI model.";
     let tags = ["General"];
 
@@ -68,6 +97,9 @@ export default function ModelsCatalogPage() {
     } else if (providerLower.includes("groq") || nameLower.includes("llama")) {
       desc = "Meta's open-weight model, optimized for speed.";
       tags = ["Open", "Fast", "Code"];
+    } else if (providerLower.includes("cerebras") || nameLower.includes("cerebras")) {
+      desc = "Cerebras CS-3 system powered model, optimized for ultra-fast, low-latency inference.";
+      tags = ["Ultra-Fast", "Inference", "8K ctx"];
     }
     return { desc, tags };
   };
@@ -200,9 +232,14 @@ export default function ModelsCatalogPage() {
     };
   }, []);
 
+  // Separate models by type
+  const imageGenModels = models.filter((m) => m.type === "image-gen");
+  const videoGenModels = models.filter((m) => m.type === "video-gen");
+  const textModels = models.filter((m) => m.type !== "image-gen" && m.type !== "video-gen");
+
   // Group models by provider
   const grouped = {};
-  models.forEach((m) => {
+  textModels.forEach((m) => {
     const prov = (m.provider || "other").toLowerCase();
     if (!grouped[prov]) grouped[prov] = [];
     grouped[prov].push(m);
@@ -218,6 +255,7 @@ export default function ModelsCatalogPage() {
     nvidia: "NVIDIA Nemotron",
     perplexity: "Perplexity AI",
     openrouter: "OpenRouter",
+    cerebras: "Cerebras AI",
     mock: "Custom & Local",
     other: "Others",
   };
@@ -232,6 +270,7 @@ export default function ModelsCatalogPage() {
     "perplexity",
     "nvidia",
     "openrouter",
+    "cerebras",
     "mock",
     "other",
   ];
@@ -322,8 +361,184 @@ export default function ModelsCatalogPage() {
             CONNECTING INTERFACE...
           </div>
         ) : (
-          sortedProviders.map((prov) => {
-            const list = grouped[prov];
+          <>
+            {/* Image Generation Section */}
+            {imageGenModels.length > 0 && (
+              <div style={{ marginBottom: "60px" }}>
+                <h2
+                  style={{
+                    fontFamily: "var(--mono)",
+                    fontSize: "12px",
+                    fontWeight: 700,
+                    letterSpacing: "0.15em",
+                    color: "var(--teal)",
+                    textTransform: "uppercase",
+                    borderBottom: "1px solid var(--border)",
+                    paddingBottom: "10px",
+                    marginBottom: "24px",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                  }}
+                >
+                  ◆ 🎨 Image Generation
+                </h2>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))",
+                    gap: "20px",
+                  }}
+                >
+                  {imageGenModels.map((m) => {
+                    const { desc, tags } = getModelTagsAndDesc(m);
+                    const isPremium = m.tier === "ultimate";
+                    return (
+                      <Link
+                        href={`/models/${m.key}`}
+                        key={m.key}
+                        ref={(el) => (cardRefs.current[m.key] = el)}
+                        onMouseMove={(e) => handleMouseMove(e, m.key)}
+                        onMouseLeave={() => handleMouseLeave(m.key)}
+                        className="model-card"
+                        style={{
+                          textDecoration: "none",
+                          border: "1px solid var(--border)",
+                          display: "flex",
+                          flexDirection: "column",
+                          justifyContent: "space-between",
+                          minHeight: "180px",
+                        }}
+                      >
+                        <div>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
+                            <span style={{ fontFamily: "var(--mono)", fontSize: "10px", color: "var(--muted)" }}>
+                              ID: {m.key}
+                            </span>
+                            <span
+                              style={{
+                                fontFamily: "var(--mono)",
+                                fontSize: "9px",
+                                textTransform: "uppercase",
+                                padding: "2px 6px",
+                                border: `1px solid ${isPremium ? "#FF6B5C" : "var(--teal)"}`,
+                                color: isPremium ? "#FF6B5C" : "var(--teal)",
+                              }}
+                            >
+                              {isPremium ? "Premium" : "Live"}
+                            </span>
+                          </div>
+                          <h3 className="model-name" style={{ fontSize: "18px", color: "var(--text)" }}>
+                            {m.label || m.key}
+                          </h3>
+                          <p className="model-desc" style={{ fontSize: "12.5px" }}>
+                            {desc}
+                          </p>
+                        </div>
+                        <div className="model-tags">
+                          {tags.map((tag) => (
+                            <span key={tag} className="tag">
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Video Generation Section */}
+            {videoGenModels.length > 0 && (
+              <div style={{ marginBottom: "60px" }}>
+                <h2
+                  style={{
+                    fontFamily: "var(--mono)",
+                    fontSize: "12px",
+                    fontWeight: 700,
+                    letterSpacing: "0.15em",
+                    color: "var(--teal)",
+                    textTransform: "uppercase",
+                    borderBottom: "1px solid var(--border)",
+                    paddingBottom: "10px",
+                    marginBottom: "24px",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                  }}
+                >
+                  ◆ 🎬 Video Generation
+                </h2>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))",
+                    gap: "20px",
+                  }}
+                >
+                  {videoGenModels.map((m) => {
+                    const { desc, tags } = getModelTagsAndDesc(m);
+                    const isPremium = m.tier === "ultimate";
+                    return (
+                      <Link
+                        href={`/models/${m.key}`}
+                        key={m.key}
+                        ref={(el) => (cardRefs.current[m.key] = el)}
+                        onMouseMove={(e) => handleMouseMove(e, m.key)}
+                        onMouseLeave={() => handleMouseLeave(m.key)}
+                        className="model-card"
+                        style={{
+                          textDecoration: "none",
+                          border: "1px solid var(--border)",
+                          display: "flex",
+                          flexDirection: "column",
+                          justifyContent: "space-between",
+                          minHeight: "180px",
+                        }}
+                      >
+                        <div>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
+                            <span style={{ fontFamily: "var(--mono)", fontSize: "10px", color: "var(--muted)" }}>
+                              ID: {m.key}
+                            </span>
+                            <span
+                              style={{
+                                fontFamily: "var(--mono)",
+                                fontSize: "9px",
+                                textTransform: "uppercase",
+                                padding: "2px 6px",
+                                border: `1px solid ${isPremium ? "#FF6B5C" : "var(--teal)"}`,
+                                color: isPremium ? "#FF6B5C" : "var(--teal)",
+                              }}
+                            >
+                              {isPremium ? "Premium" : "Live"}
+                            </span>
+                          </div>
+                          <h3 className="model-name" style={{ fontSize: "18px", color: "var(--text)" }}>
+                            {m.label || m.key}
+                          </h3>
+                          <p className="model-desc" style={{ fontSize: "12.5px" }}>
+                            {desc}
+                          </p>
+                        </div>
+                        <div className="model-tags">
+                          {tags.map((tag) => (
+                            <span key={tag} className="tag">
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Text Models Sections */}
+            {sortedProviders.map((prov) => {
+              const list = grouped[prov];
             const label = providerLabels[prov] || (prov.charAt(0).toUpperCase() + prov.slice(1));
             return (
               <div key={prov} style={{ marginBottom: "60px" }}>
@@ -410,7 +625,8 @@ export default function ModelsCatalogPage() {
                 </div>
               </div>
             );
-          })
+          })}
+          </>
         )}
       </main>
 

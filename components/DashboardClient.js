@@ -114,6 +114,13 @@ const ultimateModels = [
   { key: "my-local-model", label: "My Local Model", provider: "mock", providerModelId: "my-local-model", tier: "ultimate" },
 ];
 
+const modeRailX = { text: '0%', visual: '100%', codeinc: '200%' };
+const modeColorVar = {
+  text: ['var(--signal)', 'var(--signal-glow)'],
+  visual: ['var(--visual)', 'var(--visual-glow)'],
+  codeinc: ['var(--code-accent)', 'var(--code-glow)']
+};
+
 export default function DashboardClient({ initialProfile }) {
   const supabase = createClient();
   const router = useRouter();
@@ -150,6 +157,7 @@ export default function DashboardClient({ initialProfile }) {
   const [renamingSessionId, setRenamingSessionId] = useState(null);
   const [renameValue, setRenameValue] = useState("");
   const [openMenuSessionId, setOpenMenuSessionId] = useState(null);
+  const [deleteConfirmSessionId, setDeleteConfirmSessionId] = useState(null);
 
   // Specialized Workspaces states
   // 1. Research Workspace
@@ -165,10 +173,33 @@ export default function DashboardClient({ initialProfile }) {
   const [privateTyping, setPrivateTyping] = useState(false);
 
   // 3. Codeinc Workspace
-  const [activeFile, setActiveFile] = useState("scraper.py");
+  const [activeFile, setActiveFile] = useState("index.html");
   const [codeConsoleOpen, setCodeConsoleOpen] = useState(false);
   const [runStatusText, setRunStatusText] = useState("Sandbox idle");
   const [consoleLines, setConsoleLines] = useState(["$ python scraper.py"]);
+  
+  // 3-section design & Mode Switcher states
+  const [mode, setMode] = useState("text"); // 'text', 'visual', 'codeinc'
+  
+  // Visual Workspace states
+  const [visualType, setVisualType] = useState("image"); // 'image', 'video'
+  const [visualPrompt, setVisualPrompt] = useState("Isometric 3D node cube, charcoal background, signal-green glow, studio lighting");
+  const [visualStyle, setVisualStyle] = useState("Photoreal");
+  const [visualAspect, setVisualAspect] = useState("1:1");
+  const [visualDuration, setVisualDuration] = useState("8s");
+  const [visualStatusText, setVisualStatusText] = useState("");
+  const [visualGenerating, setVisualGenerating] = useState(false);
+  const [visualTiles, setVisualTiles] = useState([]); // Array of generated tiles { style, aspect, isVideo }
+  const [visualHistory, setVisualHistory] = useState([
+    { id: 1, title: "Node cube, teal glow", style: "Isometric", aspect: "1:1", isVideo: false, thumbClass: "vhist-thumb-1" },
+    { id: 2, title: "Console UI mockup", style: "Photoreal", aspect: "16:9", isVideo: false, thumbClass: "vhist-thumb-2" }
+  ]);
+  
+  // Codeinc Workspace states
+  const [codePrompt, setCodePrompt] = useState("");
+  const [codeGenerating, setCodeGenerating] = useState(false);
+  const [codeGenStatus, setCodeGenStatus] = useState("Awaiting prompt · HTML/CSS/JS");
+  const [nvidiaModel, setNvidiaModel] = useState("meta/llama-3.3-70b-instruct");
   
   // Loading indicators
   const [loadingSessions, setLoadingSessions] = useState(false);
@@ -182,9 +213,127 @@ export default function DashboardClient({ initialProfile }) {
   const messagesEndRef = useRef(null);
   const privateEndRef = useRef(null);
 
+  // Streaming/Rendering abort controller ref
+  const activeAbortControllerRef = useRef(null);
+
   // Helper to show temporary toast messages
   const showToast = (message) => {
     setToast({ message, visible: true });
+  };
+
+  // Handle parsing of SSE response stream from backend
+  const handleAiResponseStream = async (response, tempAiMsg, sessionId, modelKey, savedUserMsg) => {
+    let aiReplyText = "";
+    
+    // Create new abort controller for this streaming request
+    if (activeAbortControllerRef.current) {
+      activeAbortControllerRef.current.abort();
+    }
+    const abortController = new AbortController();
+    activeAbortControllerRef.current = abortController;
+
+    try {
+      if (!response.ok) {
+        aiReplyText = "⚠️ Failed to reach the AI model server. Please try again.";
+      } else {
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.includes("text/event-stream")) {
+          // Initialize empty message content for assistant in state
+          setMessages((prev) => {
+            const hasTempAi = prev.some((m) => m.id === tempAiMsg.id);
+            if (hasTempAi) {
+              return prev.map((m) => (m.id === tempAiMsg.id ? { ...tempAiMsg, content: "" } : m));
+            } else {
+              return [...prev, { ...tempAiMsg, content: "" }];
+            }
+          });
+
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
+
+          while (true) {
+            // Check if aborted
+            if (abortController.signal.aborted) {
+              reader.releaseLock();
+              break;
+            }
+
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n");
+            buffer = lines.pop() || "";
+
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed) continue;
+              if (trimmed === "data: [DONE]") continue;
+
+              if (trimmed.startsWith("data: ")) {
+                try {
+                  const jsonStr = trimmed.slice(6);
+                  const parsed = JSON.parse(jsonStr);
+                  const delta = parsed.choices?.[0]?.delta?.content || "";
+                  if (delta) {
+                    aiReplyText += delta;
+                    setMessages((prev) =>
+                      prev.map((m) => (m.id === tempAiMsg.id ? { ...m, content: aiReplyText } : m))
+                    );
+                  }
+                } catch (e) {
+                  // Ignore parsing errors for incomplete chunks
+                }
+              }
+            }
+          }
+        } else {
+          // Fallback to JSON
+          const data = await response.json();
+          aiReplyText = data.choices?.[0]?.message?.content || "⚠️ No response choices returned by model.";
+        }
+      }
+    } catch (streamErr) {
+      if (streamErr.name === "AbortError") {
+        console.log("Stream aborted by user action.");
+        return; // Don't save to DB if aborted
+      }
+      console.error("Stream reading error:", streamErr);
+      aiReplyText = aiReplyText || "⚠️ Connection interrupted while receiving response.";
+    } finally {
+      if (activeAbortControllerRef.current === abortController) {
+        activeAbortControllerRef.current = null;
+      }
+    }
+
+    // Save AI Message to Database
+    try {
+      const savedAiMsg = await addMessage(supabase, {
+        sessionId: sessionId,
+        userId: profile.id,
+        role: "assistant",
+        content: aiReplyText,
+        modelUsed: modelKey,
+      });
+
+      // Replace assistant message state with saved one
+      setMessages((prev) => {
+        const updated = prev.map((m) => (m.id === tempAiMsg.id ? savedAiMsg : m));
+        if (savedUserMsg) {
+          return updated.map((m) => (m.id === savedUserMsg.id ? savedUserMsg : m));
+        }
+        return updated;
+      });
+    } catch (saveErr) {
+      console.error("Error saving AI response to database:", saveErr);
+      // Fallback: keep the local state response but mark it with its final state
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === tempAiMsg.id ? { ...tempAiMsg, content: aiReplyText } : m
+        )
+      );
+    }
   };
 
   // Auto-hide toast after timeout
@@ -260,6 +409,11 @@ export default function DashboardClient({ initialProfile }) {
 
   // Load messages when selected session changes
   useEffect(() => {
+    if (activeAbortControllerRef.current) {
+      activeAbortControllerRef.current.abort();
+      activeAbortControllerRef.current = null;
+    }
+
     if (!activeSession) {
       setMessages([]);
       return;
@@ -283,6 +437,15 @@ export default function DashboardClient({ initialProfile }) {
     }
     loadMessages();
   }, [activeSession]);
+
+  // Clean up streaming on unmount
+  useEffect(() => {
+    return () => {
+      if (activeAbortControllerRef.current) {
+        activeAbortControllerRef.current.abort();
+      }
+    };
+  }, []);
 
   // Helper: Get active model per session (dynamic defaulting to section-appropriate model)
   const getActiveModel = () => {
@@ -455,24 +618,7 @@ export default function DashboardClient({ initialProfile }) {
         }),
       });
 
-      let aiReplyText = "";
-      if (!response.ok) {
-        aiReplyText = "⚠️ Failed to reach the AI model server. Please try again.";
-      } else {
-        const data = await response.json();
-        aiReplyText = data.choices?.[0]?.message?.content || "⚠️ No response choices returned by model.";
-      }
-
-      // Save AI Message
-      const savedAiMsg = await addMessage(supabase, {
-        sessionId: newSession.id,
-        userId: profile.id,
-        role: "assistant",
-        content: aiReplyText,
-        modelUsed: currentModelKey,
-      });
-
-      setMessages([savedUserMsg, savedAiMsg]);
+      await handleAiResponseStream(response, tempAiMsg, newSession.id, currentModelKey, savedUserMsg);
     } catch (err) {
       console.error("Error creating session with prompt:", err);
       showToast("Could not initiate conversation.");
@@ -492,6 +638,56 @@ export default function DashboardClient({ initialProfile }) {
     } catch (err) {
       console.error("Error deleting session:", err);
       showToast("Failed to delete chat session.");
+    }
+  };
+
+  // Operations: Clear Messages in Session
+  const handleClearMessages = async (sessionId) => {
+    try {
+      const { error } = await supabase
+        .from("messages")
+        .delete()
+        .eq("session_id", sessionId);
+
+      if (error) throw error;
+
+      if (activeSession && activeSession.id === sessionId) {
+        setMessages([]);
+      }
+      setOpenMenuSessionId(null);
+      showToast("Conversation cleared.");
+    } catch (err) {
+      console.error("Error clearing messages:", err);
+      showToast("Failed to clear messages.");
+    }
+  };
+
+  // Operations: Export Session to Markdown
+  const handleExportSession = async (session) => {
+    try {
+      const sessionMessages = await getMessages(supabase, session.id);
+      if (sessionMessages.length === 0) {
+        showToast("Cannot export an empty chat.");
+        setOpenMenuSessionId(null);
+        return;
+      }
+      const text = sessionMessages
+        .map((m) => `### ${m.role === "user" ? "User" : "Assistant"}\n\n${m.content}\n\n---`)
+        .join("\n\n");
+      const blob = new Blob([text], { type: "text/markdown" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${session.title.replace(/[^a-z0-9]/gi, "_").toLowerCase()}_export.md`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setOpenMenuSessionId(null);
+      showToast("Chat exported successfully!");
+    } catch (err) {
+      console.error("Error exporting session:", err);
+      showToast("Failed to export chat.");
     }
   };
 
@@ -686,27 +882,7 @@ export default function DashboardClient({ initialProfile }) {
         }),
       });
 
-      let aiReplyText = "";
-      if (!response.ok) {
-        aiReplyText = "⚠️ Failed to reach the AI model server. Please try again.";
-      } else {
-        const data = await response.json();
-        aiReplyText = data.choices?.[0]?.message?.content || "⚠️ No response choices returned by model.";
-      }
-
-      // Save AI Message to Database
-      const savedAiMsg = await addMessage(supabase, {
-        sessionId: activeSession.id,
-        userId: profile.id,
-        role: "assistant",
-        content: aiReplyText,
-        modelUsed: activeModel.key,
-      });
-
-      // Replace assistant message state with saved one
-      setMessages((prev) =>
-        prev.map((m) => (m.id === tempAiMsg.id ? savedAiMsg : m))
-      );
+      await handleAiResponseStream(response, tempAiMsg, activeSession.id, activeModel.key);
     } catch (err) {
       console.error("Error sending message:", err);
       showToast("Message sent but not synced with database.");
@@ -759,14 +935,7 @@ export default function DashboardClient({ initialProfile }) {
 
   const handleDowngradeOrPortalFromSettings = async () => {
     if (!profile.stripe_customer_id) {
-      try {
-        const updated = await updateProfilePlan(supabase, profile.id, "free");
-        setProfile(updated);
-        showToast("ℹ️ Downgraded to Free plan successfully.");
-      } catch (err) {
-        console.error("Downgrade error:", err);
-        showToast("Failed to downgrade plan.");
-      }
+      window.location.href = "/pricing?from=settings";
       return;
     }
 
@@ -778,11 +947,11 @@ export default function DashboardClient({ initialProfile }) {
       if (data.url) {
         window.location.href = data.url;
       } else {
-        showToast(data.error || "Failed to open Billing Portal.");
+        window.location.href = "/pricing?from=settings";
       }
     } catch (err) {
       console.error("Billing Portal Error:", err);
-      showToast("Something went wrong opening billing portal.");
+      window.location.href = "/pricing?from=settings";
     }
   };
 
@@ -822,6 +991,11 @@ export default function DashboardClient({ initialProfile }) {
   // Switch tabs & sync views
   const switchWorkspaceTab = (tab) => {
     setActiveTab(tab);
+    if (tab === "code") {
+      setMode("codeinc");
+    } else if (tab === "research" || tab === "private" || tab === "default") {
+      setMode("text");
+    }
     if (activeSession && getDisplaySection(activeSession.section) !== tab) {
       setActiveSession(null);
     }
@@ -904,43 +1078,224 @@ export default function DashboardClient({ initialProfile }) {
     }, 1100);
   };
 
-  // Code editor file mocks
-  const fileContents = {
-    "scraper.py": (
-      <>
-        <span className="ln">1</span><span className="kw">import</span> requests<br />
-        <span className="ln">2</span><span className="kw">from</span> bs4 <span className="kw">import</span> BeautifulSoup<br />
-        <span className="ln">3</span><br />
-        <span className="ln">4</span><span className="kw">def</span> <span className="fn">fetch_headlines</span>(url):<br />
-        <span className="ln">5</span>    res = requests.get(url, timeout=<span className="num">10</span>)<br />
-        <span className="ln">6</span>    soup = BeautifulSoup(res.text, <span className="str">"html.parser"</span>)<br />
-        <span className="ln">7</span>    <span className="kw">return</span> [h.get_text() <span className="kw">for</span> h <span className="kw">in</span> soup.select(<span className="str">"h2.headline"</span>)]<br />
-        <span className="ln">8</span><br />
-        <span className="ln">9</span><span className="com"># quick test run</span><br />
-        <span className="ln">10</span><span className="kw">if</span> __name__ == <span className="str">"__main__"</span>:<br />
-        <span className="ln">11</span>    <span className="kw">for</span> title <span className="kw">in</span> fetch_headlines(<span className="str">"https://example-news.com"</span>):<br />
-        <span className="ln">12</span>        <span className="fn">print</span>(title)
-      </>
-    ),
-    "utils.py": (
-      <>
-        <span className="ln">1</span><span className="kw">import</span> re<br />
-        <span className="ln">2</span><br />
-        <span className="ln">3</span><span className="kw">def</span> <span className="fn">clean_text</span>(text):<br />
-        <span className="ln">4</span>    <span className="com"># Remove extra whitespaces</span><br />
-        <span className="ln">5</span>    <span className="kw">return</span> re.sub(<span className="str">r'\s+'</span>, <span className="str">' '</span>, text).strip()<br />
-        <span className="ln">6</span><br />
-        <span className="ln">7</span><span className="kw">if</span> __name__ == <span className="str">"__main__"</span>:<br />
-        <span className="ln">8</span>    sample = <span className="str">"  Too   many    spaces  "</span><br />
-        <span className="ln">9</span>    <span className="fn">print</span>(clean_text(sample))
-      </>
-    ),
-    "requirements.txt": (
-      <>
-        <span className="ln">1</span>requests&gt;=<span className="num">2.31.0</span><br />
-        <span className="ln">2</span>beautifulsoup4&gt;=<span className="num">4.12.0</span>
-      </>
-    )
+  // 3-section design mode change handler
+  const handleModeChange = (newMode) => {
+    setMode(newMode);
+    if (newMode === "text") {
+      setActiveTab("default");
+      if (activeSession && getDisplaySection(activeSession.section) !== "default") {
+        setActiveSession(null);
+      }
+    } else if (newMode === "codeinc") {
+      setActiveTab("code");
+      if (activeSession && getDisplaySection(activeSession.section) !== "code") {
+        setActiveSession(null);
+      }
+    } else if (newMode === "visual") {
+      // Visual mode has no active Tab in text history, activeTab stays or goes to default
+    }
+    setMobileSidebarOpen(false);
+  };
+
+  // Code editor file mocks using state for editing / generating
+  // Code editor file mocks using state for editing / generating (HTML, CSS, JS)
+  const [editorFilesHtml, setEditorFilesHtml] = useState({
+    "index.html": ``,
+    "style.css": ``,
+    "script.js": ``
+  });
+
+  const formatCodeForEditor = (code) => {
+    if (!code) return "";
+    const lines = code.split("\n");
+    return lines.map((line, idx) => {
+      let escaped = line
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+      
+      escaped = escaped
+        .replace(/\b(const|let|var|function|return|import|export|if|else|for|while|class|from|document|window)\b/g, '<span class="kw">$1</span>')
+        .replace(/(".*?"|'.*?'|`.*?`)/g, '<span class="str">$1</span>')
+        .replace(/(\/\/.*|\/\*.*\*\/|&lt;!--.*--&gt;)/g, '<span class="com">$1</span>');
+        
+      return `<span class="ln">${idx + 1}</span>${escaped}`;
+    }).join("\n");
+  };
+
+  const downloadFile = (fileName, content) => {
+    if (!content) return;
+    const cleanHtml = content.replace(/<span class="ln">\d+<\/span>/g, '');
+    const plainText = cleanHtml
+      .replace(/<[^>]*>/g, '')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&amp;/g, '&');
+    
+    const blob = new Blob([plainText], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = fileName;
+    link.click();
+    URL.revokeObjectURL(url);
+    showToast(`${fileName} downloaded successfully!`);
+  };
+
+  const handleGenerateCode = async (e) => {
+    if (e) e.preventDefault();
+    if (!codePrompt.trim()) return;
+    const userPrompt = codePrompt;
+    setCodePrompt("");
+    setCodeGenerating(true);
+    setCodeGenStatus("Connecting to Nvidia NIM stream…");
+    
+    // Clear index, style, script
+    setEditorFilesHtml({
+      "index.html": '<span class="gen-cursor"></span>',
+      "style.css": '',
+      "script.js": ''
+    });
+
+    try {
+      const res = await fetch("/api/codeinc/generate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          prompt: userPrompt,
+          model: nvidiaModel
+        })
+      });
+
+      if (!res.ok) {
+        throw new Error(`Failed to initiate stream: ${res.statusText}`);
+      }
+
+      setCodeGenStatus("Streaming code blocks…");
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let accumulatedRawText = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunkText = decoder.decode(value, { stream: true });
+        
+        // Parse SSE tokens
+        const lines = chunkText.split("\n");
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            const dataStr = line.slice(6).trim();
+            if (dataStr === "[DONE]") continue;
+            try {
+              const parsed = JSON.parse(dataStr);
+              const token = parsed.choices?.[0]?.delta?.content || "";
+              accumulatedRawText += token;
+            } catch (e) {}
+          }
+        }
+
+        // Match tags live
+        const htmlMatch = accumulatedRawText.match(/```html\n([\s\S]*?)(?:```|$)/i);
+        const cssMatch = accumulatedRawText.match(/```css\n([\s\S]*?)(?:```|$)/i);
+        const jsMatch = accumulatedRawText.match(/```(?:javascript|js)\n([\s\S]*?)(?:```|$)/i);
+
+        let currentHtml = htmlMatch ? htmlMatch[1] : "";
+        let currentCss = cssMatch ? cssMatch[1] : "";
+        let currentJs = jsMatch ? jsMatch[1] : "";
+
+        // Fallback for non-tagged text
+        if (!htmlMatch && !cssMatch && !jsMatch) {
+          currentHtml = accumulatedRawText;
+        }
+
+        setEditorFilesHtml({
+          "index.html": formatCodeForEditor(currentHtml) + (activeFile === "index.html" ? '<span class="gen-cursor"></span>' : ''),
+          "style.css": formatCodeForEditor(currentCss) + (activeFile === "style.css" ? '<span class="gen-cursor"></span>' : ''),
+          "script.js": formatCodeForEditor(currentJs) + (activeFile === "script.js" ? '<span class="gen-cursor"></span>' : '')
+        });
+      }
+
+      // Final format to remove cursor
+      const htmlFinalMatch = accumulatedRawText.match(/```html\n([\s\S]*?)(?:```|$)/i);
+      const cssFinalMatch = accumulatedRawText.match(/```css\n([\s\S]*?)(?:```|$)/i);
+      const jsFinalMatch = accumulatedRawText.match(/```(?:javascript|js)\n([\s\S]*?)(?:```|$)/i);
+
+      let finalHtml = htmlFinalMatch ? htmlFinalMatch[1] : "";
+      let finalCss = cssFinalMatch ? cssFinalMatch[1] : "";
+      let finalJs = jsFinalMatch ? jsFinalMatch[1] : "";
+
+      if (!htmlFinalMatch && !cssFinalMatch && !jsFinalMatch) {
+        finalHtml = accumulatedRawText;
+      }
+
+      setEditorFilesHtml({
+        "index.html": formatCodeForEditor(finalHtml),
+        "style.css": formatCodeForEditor(finalCss),
+        "script.js": formatCodeForEditor(finalJs)
+      });
+
+      setCodeGenerating(false);
+      setCodeGenStatus("Success · Live streaming complete");
+      showToast("Web code streamed live & extracted successfully!");
+
+    } catch (err) {
+      console.error(err);
+      setCodeGenStatus("Streaming failed");
+      setCodeGenerating(false);
+      showToast("Streaming error: " + err.message);
+    }
+  };
+
+  // Helper to copy code (strip HTML tags and line numbers)
+  const handleCopyCode = () => {
+    const rawHtml = editorFilesHtml[activeFile] || "";
+    const cleanHtml = rawHtml.replace(/<span class="ln">\d+<\/span>/g, '');
+    const plainText = cleanHtml
+      .replace(/<[^>]*>/g, '')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&amp;/g, '&');
+    
+    navigator.clipboard?.writeText(plainText).catch(() => {});
+    showToast("Code copied to clipboard!");
+  };
+
+  // Interactive workspaces simulation: Visual Workspace Generator
+  const handleGenerateVisual = () => {
+    if (!visualPrompt.trim()) return;
+    setVisualGenerating(true);
+    setVisualTiles([]);
+    setVisualStatusText(visualType === "image" ? "Rendering — composing scene" : "Rendering — generating frames");
+    
+    setTimeout(() => {
+      setVisualGenerating(false);
+      const count = visualType === "image" ? 4 : 2;
+      const newTiles = [];
+      for (let i = 0; i < count; i++) {
+        newTiles.push({
+          id: Date.now() + i,
+          style: visualStyle,
+          aspect: visualAspect,
+          isVideo: visualType === "video"
+        });
+      }
+      setVisualTiles(newTiles);
+      
+      const newHistoryItem = {
+        id: Date.now(),
+        title: visualPrompt.slice(0, 24) + (visualPrompt.length > 24 ? "..." : ""),
+        style: visualStyle,
+        aspect: visualAspect,
+        isVideo: visualType === "video",
+        thumbClass: visualType === "video" ? "vhist-thumb-2" : "vhist-thumb-1"
+      };
+      setVisualHistory((prev) => [newHistoryItem, ...prev]);
+    }, visualType === "image" ? 1300 : 2200);
   };
 
   // Helper to map model key to cards styles
@@ -1012,7 +1367,7 @@ export default function DashboardClient({ initialProfile }) {
     return (
       <div
         key={session.id}
-        className={`chat-item relative ${isActive ? "active" : ""}`}
+        className={`chat-item relative group ${isActive ? "active" : ""}`}
       >
         {isEditing ? (
           <div className="w-full px-2 py-1">
@@ -1049,11 +1404,12 @@ export default function DashboardClient({ initialProfile }) {
               <button
                 onClick={(e) => {
                   e.stopPropagation();
+                  setDeleteConfirmSessionId(null);
                   setOpenMenuSessionId(
                     openMenuSessionId === session.id ? null : session.id
                   );
                 }}
-                className="p-1 rounded text-brand-subtext/50 hover:text-brand-text opacity-0 hover:opacity-100 group-hover:opacity-100 transition-opacity cursor-pointer bg-transparent border-none"
+                className="p-1 rounded text-brand-subtext/50 hover:text-brand-text active:scale-[0.88] opacity-0 hover:opacity-100 group-hover:opacity-100 transition-all cursor-pointer bg-transparent border-none outline-none"
                 aria-label="Chat actions"
               >
                 <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
@@ -1063,28 +1419,114 @@ export default function DashboardClient({ initialProfile }) {
 
               {/* Rename/Delete menu */}
               {openMenuSessionId === session.id && (
-                <div ref={menuRef} className="absolute right-0 top-6 bg-brand-panel-2 border border-brand-border rounded shadow-xl py-1 z-30 w-28 bg-[#181C22]">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setRenameValue(session.title);
-                      setRenamingSessionId(session.id);
-                      setOpenMenuSessionId(null);
+                deleteConfirmSessionId === session.id ? (
+                  <div 
+                    ref={menuRef} 
+                    className="absolute right-0 top-6 border border-[#262B33] rounded-md shadow-2xl p-3 z-30 w-[170px] animate-in fade-in zoom-in-95 duration-100"
+                    style={{
+                      background: "rgba(16, 20, 24, 0.98)",
+                      backdropFilter: "blur(12px)",
+                      boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.05)",
                     }}
-                    className="w-full text-left px-3 py-1.5 text-xs text-brand-text hover:bg-brand-bg cursor-pointer bg-transparent border-none font-mono"
                   >
-                    ✏️ Rename
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDeleteSession(session.id);
+                    <div className="text-left mb-2.5">
+                      <div className="text-white text-xs font-semibold font-sans">Delete conversation?</div>
+                      <div className="text-[#8A919C] text-[10px] font-sans mt-0.5 leading-tight">This will permanently delete all messages.</div>
+                    </div>
+                    <div className="flex gap-1.5">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDeleteConfirmSessionId(null);
+                        }}
+                        className="flex-1 text-center py-1 text-[10.5px] text-white border border-[#3E4550] hover:bg-[#ffffff0d] active:scale-[0.94] cursor-pointer bg-transparent rounded transition-all font-sans font-medium outline-none"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteSession(session.id);
+                          setDeleteConfirmSessionId(null);
+                        }}
+                        className="flex-1 text-center py-1 text-[10.5px] text-white bg-[#FF6B5C] hover:bg-[#FF5240] active:scale-[0.94] cursor-pointer border-none rounded transition-all font-sans font-medium outline-none"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div 
+                    ref={menuRef} 
+                    className="absolute right-0 top-6 border border-[#262B33] rounded-md shadow-2xl p-1 z-30 min-w-[140px] animate-in fade-in zoom-in-95 duration-100"
+                    style={{
+                      background: "rgba(16, 20, 24, 0.96)",
+                      backdropFilter: "blur(12px)",
+                      boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.05)",
                     }}
-                    className="w-full text-left px-3 py-1.5 text-xs text-[#FF6B5C] hover:bg-brand-bg cursor-pointer bg-transparent border-none font-mono"
                   >
-                    🗑️ Delete
-                  </button>
-                </div>
+                    {/* Rename Option */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setRenameValue(session.title);
+                        setRenamingSessionId(session.id);
+                        setOpenMenuSessionId(null);
+                      }}
+                      className="w-full text-left px-2.5 py-1.5 text-[11.5px] text-[#8A919C] hover:text-white hover:bg-[#ffffff0a] active:scale-[0.97] active:bg-[#ffffff12] cursor-pointer bg-transparent border-none font-sans flex items-center gap-2 rounded transition-all group outline-none"
+                    >
+                      <svg className="w-3.5 h-3.5 opacity-70 group-hover:opacity-100" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                      </svg>
+                      Rename
+                    </button>
+
+                    {/* Export Option */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleExportSession(session);
+                      }}
+                      className="w-full text-left px-2.5 py-1.5 text-[11.5px] text-[#8A919C] hover:text-white hover:bg-[#ffffff0a] active:scale-[0.97] active:bg-[#ffffff12] cursor-pointer bg-transparent border-none font-sans flex items-center gap-2 rounded transition-all group outline-none"
+                    >
+                      <svg className="w-3.5 h-3.5 opacity-70 group-hover:opacity-100" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      </svg>
+                      Export Chat
+                    </button>
+
+                    {/* Clear Messages Option */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleClearMessages(session.id);
+                      }}
+                      className="w-full text-left px-2.5 py-1.5 text-[11.5px] text-[#8A919C] hover:text-white hover:bg-[#ffffff0a] active:scale-[0.97] active:bg-[#ffffff12] cursor-pointer bg-transparent border-none font-sans flex items-center gap-2 rounded transition-all group outline-none"
+                    >
+                      <svg className="w-3.5 h-3.5 opacity-70 group-hover:opacity-100" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                      Clear Chat
+                    </button>
+
+                    {/* Divider */}
+                    <div className="h-[1px] bg-[#262B33] my-1 mx-1" />
+
+                    {/* Delete Option */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeleteConfirmSessionId(session.id);
+                      }}
+                      className="w-full text-left px-2.5 py-1.5 text-[11.5px] text-[#FF6B5C] hover:bg-[#FF6B5C]/10 active:scale-[0.97] active:bg-[#FF6B5C]/25 cursor-pointer bg-transparent border-none font-sans flex items-center gap-2 rounded transition-all outline-none"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                      Delete Chat
+                    </button>
+                  </div>
+                )
               )}
             </div>
           </>
@@ -1157,7 +1599,7 @@ export default function DashboardClient({ initialProfile }) {
         />
       )}
 
-      <div className="app">
+      <div className={`app ${mode === "codeinc" ? "codeinc-fullscreen" : ""}`}>
         {/* TOPBAR */}
         <div className="topbar">
           <div className="topbar-left">
@@ -1177,11 +1619,58 @@ export default function DashboardClient({ initialProfile }) {
             </div>
           </div>
 
+          <div
+            className="mode-switcher"
+            id="modeSwitcher"
+            style={{
+              "--mode-rail-x": modeRailX[mode],
+              "--mode-active-color": modeColorVar[mode][0],
+              "--mode-active-glow": modeColorVar[mode][1],
+            }}
+          >
+            <button
+              className={`mode-btn ${mode === "text" ? "active" : ""}`}
+              onClick={() => handleModeChange("text")}
+              data-mode="text"
+            >
+              <span className="mode-idx">01</span>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
+              </svg>
+              Text
+            </button>
+            <button
+              className={`mode-btn ${mode === "visual" ? "active" : ""}`}
+              onClick={() => handleModeChange("visual")}
+              data-mode="visual"
+            >
+              <span className="mode-idx">02</span>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+                <circle cx="8.5" cy="8.5" r="1.5" />
+                <polyline points="21 15 16 10 5 21" />
+              </svg>
+              Visual
+            </button>
+            <button
+              className={`mode-btn ${mode === "codeinc" ? "active" : ""}`}
+              onClick={() => handleModeChange("codeinc")}
+              data-mode="codeinc"
+            >
+              <span className="mode-idx">03</span>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="16 18 22 12 16 6" />
+                <polyline points="8 6 2 12 8 18" />
+              </svg>
+              Codeinc
+            </button>
+          </div>
+
           <div className="topbar-right">
             <button onClick={() => setIsModelModalOpen(true)} className="model-trigger">
               <div className="model-dot"></div>
               <span id="modelLabel">{currentModel?.label || "Gemini 2.5 Pro"}</span>
-              <svg className="expand" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <svg className="expand" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                 <path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3" />
               </svg>
             </button>
@@ -1199,126 +1688,301 @@ export default function DashboardClient({ initialProfile }) {
 
         {/* SIDEBAR */}
         <div className={`sidebar ${mobileSidebarOpen ? "mobile-open" : ""}`} id="sidebar">
-          <div className="sidebar-top">
-            <button onClick={() => handleCreateSession(activeTab === "default" ? "chat" : activeTab)} className="new-chat-btn">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                <line x1="12" y1="5" x2="12" y2="19" />
-                <line x1="5" y1="12" x2="19" y2="12" />
-              </svg>
-              New Chat
-            </button>
-            <div className="search-wrap">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="11" cy="11" r="7" />
-                <line x1="21" y1="21" x2="16.65" y2="16.65" />
-              </svg>
-              <input
-                type="text"
-                placeholder="Search chats…"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-            </div>
-          </div>
-
-          {/* Section tiles */}
-          <div className="section-tiles">
-            <div
-              onClick={() => switchWorkspaceTab("research")}
-              className={`section-tile tile-research ${activeTab === "research" ? "active" : ""}`}
-            >
-              <div className="tile-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          {/* ===== TEXT MODE SIDEBAR PANEL ===== */}
+          <div className={`sidebar-panel ${mode === "text" ? "active" : ""}`} id="sidebarText">
+            <div className="sidebar-top">
+              <button onClick={() => handleCreateSession(activeTab === "default" ? "chat" : activeTab)} className="new-chat-btn">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+                New Chat
+              </button>
+              <div className="search-wrap">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <circle cx="11" cy="11" r="7" />
                   <line x1="21" y1="21" x2="16.65" y2="16.65" />
                 </svg>
+                <input
+                  type="text"
+                  placeholder="Search chats…"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
               </div>
-              <div className="tile-text">
-                <div className="tile-name">RESEARCH</div>
-                <div className="tile-sub">Live sources & citations</div>
-              </div>
-              <svg className="tile-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                <polyline points="9 18 15 12 9 6" />
-              </svg>
-            </div>
-            
-            <div
-              onClick={() => switchWorkspaceTab("private")}
-              className={`section-tile tile-private ${activeTab === "private" ? "active" : ""}`}
-            >
-              <div className="tile-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <rect x="3" y="11" width="18" height="11" rx="2" />
-                  <path d="M7 11V7a5 5 0 0110 0v4" />
-                </svg>
-              </div>
-              <div className="tile-text">
-                <div className="tile-name">PRIVATE</div>
-                <div className="tile-sub">Encrypted, no training</div>
-              </div>
-              <svg className="tile-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                <polyline points="9 18 15 12 9 6" />
-              </svg>
             </div>
 
-            <div
-              onClick={() => switchWorkspaceTab("code")}
-              className={`section-tile tile-code ${activeTab === "code" ? "active" : ""}`}
-            >
-              <div className="tile-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            {/* Section tiles */}
+            <div className="section-tiles">
+              <div
+                onClick={() => switchWorkspaceTab("research")}
+                className={`section-tile tile-research ${activeTab === "research" ? "active" : ""}`}
+              >
+                <div className="tile-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="11" cy="11" r="7" />
+                    <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                  </svg>
+                </div>
+                <div className="tile-text">
+                  <div className="tile-name">RESEARCH</div>
+                  <div className="tile-sub">Live sources & citations</div>
+                </div>
+                <svg className="tile-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <polyline points="9 18 15 12 9 6" />
+                </svg>
+              </div>
+              
+              <div
+                onClick={() => switchWorkspaceTab("private")}
+                className={`section-tile tile-private ${activeTab === "private" ? "active" : ""}`}
+              >
+                <div className="tile-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <rect x="3" y="11" width="18" height="11" rx="2" />
+                    <path d="M7 11V7a5 5 0 0110 0v4" />
+                  </svg>
+                </div>
+                <div className="tile-text">
+                  <div className="tile-name">PRIVATE</div>
+                  <div className="tile-sub">Encrypted, no training</div>
+                </div>
+                <svg className="tile-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <polyline points="9 18 15 12 9 6" />
+                </svg>
+              </div>
+            </div>
+
+            {/* User conversations list */}
+            <div className="sidebar-scroll">
+              <div className="section-label">
+                {activeTab === "default" ? "Chat History" : activeTab + " History"}
+              </div>
+              
+              {loadingSessions ? (
+                <div className="text-[11px] font-mono text-[#565D68] px-2 py-3">
+                  Loading history...
+                </div>
+              ) : filteredSessions.length > 0 ? (
+                filteredSessions.map(renderSessionRow)
+              ) : (
+                <div
+                  onClick={() => handleCreateSession(activeTab === "default" ? "chat" : activeTab)}
+                  className="chat-item"
+                >
+                  <span className="ci-title italic text-[11.5px]">No chats here. Click to start one!</span>
+                </div>
+              )}
+            </div>
+
+            <div className="sidebar-bottom">
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span>{profile.plan === "ultimate" ? "Unlimited msgs" : "34 / 100 msgs"}</span>
+                <span>{profile.plan === "ultimate" ? "Ultimate" : "Free"}</span>
+              </div>
+              <div className="usage-bar">
+                <div className="usage-fill" style={{ width: profile.plan === "ultimate" ? "100%" : "34%" }}></div>
+              </div>
+            </div>
+          </div>
+
+          {/* ===== VISUAL MODE SIDEBAR PANEL ===== */}
+          <div className={`sidebar-panel ${mode === "visual" ? "active" : ""}`} id="sidebarVisual">
+            <div className="sidebar-top">
+              <button
+                onClick={() => {
+                  setVisualPrompt("");
+                  setVisualTiles([]);
+                  setVisualGenerating(false);
+                }}
+                className="new-chat-btn new-chat-visual"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+                New generation
+              </button>
+              <div className="search-wrap">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="11" cy="11" r="7" />
+                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                </svg>
+                <input
+                  type="text"
+                  placeholder="Search generations…"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+              </div>
+            </div>
+
+            {/* Section tiles for Image and Video */}
+            <div className="section-tiles">
+              <div
+                onClick={() => setVisualType("image")}
+                className={`section-tile tile-visual-mode ${visualType === "image" ? "active" : ""}`}
+              >
+                <div className="tile-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="3" width="18" height="18" rx="2" />
+                    <circle cx="8.5" cy="8.5" r="1.5" />
+                    <polyline points="21 15 16 10 5 21" />
+                  </svg>
+                </div>
+                <div className="tile-text">
+                  <div className="tile-name">IMAGE</div>
+                  <div className="tile-sub">Stills, art, product shots</div>
+                </div>
+                <svg className="tile-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <polyline points="9 18 15 12 9 6" />
+                </svg>
+              </div>
+              
+              <div
+                onClick={() => setVisualType("video")}
+                className={`section-tile tile-visual-mode ${visualType === "video" ? "active" : ""}`}
+              >
+                <div className="tile-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polygon points="23 7 16 12 23 17 23 7" />
+                    <rect x="1" y="5" width="15" height="14" rx="2" />
+                  </svg>
+                </div>
+                <div className="tile-text">
+                  <div className="tile-name">VIDEO</div>
+                  <div className="tile-sub">Clips & motion sequences</div>
+                </div>
+                <svg className="tile-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <polyline points="9 18 15 12 9 6" />
+                </svg>
+              </div>
+            </div>
+
+            {/* Visual generations history */}
+            <div className="sidebar-scroll">
+              <div className="section-label">Recent</div>
+              {visualHistory
+                .filter(item => item.title.toLowerCase().includes(searchQuery.toLowerCase()))
+                .map(item => (
+                  <div
+                    key={item.id}
+                    onClick={() => {
+                      setVisualPrompt(item.title);
+                      setVisualStyle(item.style);
+                      setVisualAspect(item.aspect);
+                      setVisualType(item.isVideo ? "video" : "image");
+                      setVisualTiles([
+                        { id: 101, style: item.style, aspect: item.aspect, isVideo: item.isVideo }
+                      ]);
+                    }}
+                    className="chat-item"
+                  >
+                    <svg className="ci-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      {item.isVideo ? (
+                        <>
+                          <polygon points="23 7 16 12 23 17 23 7" />
+                          <rect x="1" y="5" width="15" height="14" rx="2" />
+                        </>
+                      ) : (
+                        <>
+                          <rect x="3" y="3" width="18" height="18" rx="2" />
+                          <circle cx="8.5" cy="8.5" r="1.5" />
+                          <polyline points="21 15 16 10 5 21" />
+                        </>
+                      )}
+                    </svg>
+                    <span className="ci-title">{item.title}</span>
+                  </div>
+                ))}
+            </div>
+
+            <div className="sidebar-bottom">
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span>6 / 50 generations</span>
+                <span>Free</span>
+              </div>
+              <div className="usage-bar">
+                <div className="usage-fill" style={{ width: "12%", background: "var(--visual)" }}></div>
+              </div>
+            </div>
+          </div>
+
+          {/* ===== CODEINC SIDEBAR PANEL ===== */}
+          <div className={`sidebar-panel ${mode === "codeinc" ? "active" : ""}`} id="sidebarCodeinc">
+            <div className="sidebar-top">
+              <button
+                onClick={() => {
+                  setEditorFilesHtml({
+                    "index.html": ``,
+                    "style.css": ``,
+                    "script.js": ``
+                  });
+                  setActiveFile("index.html");
+                }}
+                className="new-chat-btn new-chat-code"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+                Reset Files
+              </button>
+              <div className="search-wrap">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="11" cy="11" r="7" />
+                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                </svg>
+                <input
+                  type="text"
+                  placeholder="Search files…"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="sidebar-scroll">
+              <div className="section-label">Workspace</div>
+              {Object.keys(editorFilesHtml)
+                .filter(fileName => fileName.toLowerCase().includes(searchQuery.toLowerCase()))
+                .map(fileName => (
+                  <div
+                    key={fileName}
+                    onClick={() => setActiveFile(fileName)}
+                    className={`chat-item ${activeFile === fileName ? "active" : ""}`}
+                  >
+                    <svg className="ci-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+                      <path d="M14 2v6h6" />
+                    </svg>
+                    <span className="ci-title">{fileName}</span>
+                  </div>
+                ))}
+              
+              <div className="section-label">Recent projects</div>
+              <div className="chat-item">
+                <svg className="ci-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <polyline points="16 18 22 12 16 6" />
                   <polyline points="8 6 2 12 8 18" />
                 </svg>
+                <span className="ci-title">web-project</span>
               </div>
-              <div className="tile-text">
-                <div className="tile-name">CODEINC</div>
-                <div className="tile-sub">Editor, run & inspect</div>
-              </div>
-              <svg className="tile-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                <polyline points="9 18 15 12 9 6" />
-              </svg>
             </div>
-          </div>
 
-          {/* User conversations list */}
-          <div className="sidebar-scroll">
-            <div className="section-label">
-              {activeTab === "default" ? "Chat History" : activeTab + " History"}
-            </div>
-            
-            {loadingSessions ? (
-              <div className="text-[11px] font-mono text-[#565D68] px-2 py-3">
-                Loading history...
+            <div className="sidebar-bottom">
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span>Coding Assistant</span>
+                <span style={{ color: "var(--code-accent)" }}>● Ready</span>
               </div>
-            ) : filteredSessions.length > 0 ? (
-              filteredSessions.map(renderSessionRow)
-            ) : (
-              <div
-                onClick={() => handleCreateSession(activeTab === "default" ? "chat" : activeTab)}
-                className="chat-item"
-              >
-                <span className="ci-title italic text-[11.5px]">No chats here. Click to start one!</span>
-              </div>
-            )}
-          </div>
-
-          <div className="sidebar-bottom">
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span>{profile.plan === "ultimate" ? "Unlimited msgs" : "34 / 100 msgs"}</span>
-              <span>{profile.plan === "ultimate" ? "Ultimate" : "Free"}</span>
-            </div>
-            <div className="usage-bar">
-              <div className="usage-fill" style={{ width: profile.plan === "ultimate" ? "100%" : "34%" }}></div>
             </div>
           </div>
         </div>
 
-        {/* WORKSPACE (swappable views) */}
         <div className="workspace" id="workspace">
 
           {/* ===== DEFAULT CHAT VIEW ===== */}
-          <div className={`view ${activeTab === "default" ? "active" : ""}`} id="viewChat">
+          <div className={`view ${mode === "text" && activeTab === "default" ? "active" : ""}`} id="viewChat">
             <div
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
@@ -1498,7 +2162,7 @@ export default function DashboardClient({ initialProfile }) {
           </div>
 
           {/* ===== RESEARCH WORKSPACE ===== */}
-          <div className={`view ${activeTab === "research" ? "active" : ""}`} id="viewResearch">
+          <div className={`view ${mode === "text" && activeTab === "research" ? "active" : ""}`} id="viewResearch">
             <div className="ws-header">
               <div className="ws-header-left">
                 <div className="ws-icon-big">
@@ -1606,7 +2270,7 @@ export default function DashboardClient({ initialProfile }) {
           </div>
 
           {/* ===== PRIVATE WORKSPACE ===== */}
-          <div className={`view ${activeTab === "private" ? "active" : ""}`} id="viewPrivate">
+          <div className={`view ${mode === "text" && activeTab === "private" ? "active" : ""}`} id="viewPrivate">
             <div className="ws-header">
               <div className="ws-header-left">
                 <div className="ws-icon-big">
@@ -1739,7 +2403,7 @@ export default function DashboardClient({ initialProfile }) {
           </div>
 
           {/* ===== CODEINC WORKSPACE ===== */}
-          <div className={`view ${activeTab === "code" ? "active" : ""}`} id="viewCode">
+          <div className={`view ${mode === "codeinc" ? "active" : ""}`} id="viewCode">
             <div className="ws-header">
               <div className="ws-header-left">
                 <div className="ws-icon-big">
@@ -1750,31 +2414,83 @@ export default function DashboardClient({ initialProfile }) {
                 </div>
                 <div>
                   <div className="ws-title">Codeinc</div>
-                  <div className="ws-subtitle">Generate, edit, and run code in a sandbox</div>
+                  <div className="ws-subtitle">Generates code from a prompt using the coding model</div>
                 </div>
               </div>
-              <button onClick={() => switchWorkspaceTab("default")} className="ws-back">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <line x1="19" y1="12" x2="5" y2="12" />
-                  <polyline points="12 19 5 12 12 5" />
-                </svg>
-                Back to chat
-              </button>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <select
+                  value={nvidiaModel}
+                  onChange={(e) => setNvidiaModel(e.target.value)}
+                  style={{
+                    background: "var(--panel-2)",
+                    border: "1px solid var(--border)",
+                    color: "var(--text)",
+                    padding: "6px 12px",
+                    fontFamily: "var(--mono)",
+                    fontSize: "11.5px",
+                    outline: "none",
+                    cursor: "pointer",
+                    borderRadius: "3px"
+                  }}
+                >
+                  <option value="meta/llama-3.3-70b-instruct">meta/llama-3.3-70b-instruct</option>
+                  <option value="meta/llama-3.1-70b-instruct">meta/llama-3.1-70b-instruct</option>
+                  <option value="meta/llama-3.1-8b-instruct">meta/llama-3.1-8b-instruct</option>
+                  <option value="meta/llama-3.2-3b-instruct">meta/llama-3.2-3b-instruct</option>
+                  <option value="meta/llama-3.2-1b-instruct">meta/llama-3.2-1b-instruct</option>
+                  <option value="microsoft/phi-4-mini-instruct">microsoft/phi-4-mini-instruct</option>
+                  <option value="google/gemma-2-2b-it">google/gemma-2-2b-it</option>
+                  <option value="mistralai/mixtral-8x7b-instruct-v0.1">mistralai/mixtral-8x7b-instruct-v0.1</option>
+                </select>
+                <button onClick={() => handleModeChange("text")} className="ws-back">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <line x1="19" y1="12" x2="5" y2="12" />
+                    <polyline points="12 19 5 12 12 5" />
+                  </svg>
+                  Exit full screen
+                </button>
+              </div>
             </div>
+            
             <div className="code-body">
               <div className="file-tree">
-                <h4>Workspace</h4>
-                {["scraper.py", "utils.py", "requirements.txt"].map((file) => (
+                <h4>Generated files</h4>
+                {Object.keys(editorFilesHtml).map((file) => (
                   <div
                     key={file}
                     onClick={() => setActiveFile(file)}
                     className={`file-row ${activeFile === file ? "active" : ""}`}
+                    style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}
                   >
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
-                      <path d="M14 2v6h6" />
-                    </svg>
-                    {file}
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: "14px", height: "14px" }}>
+                        <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+                        <path d="M14 2v6h6" />
+                      </svg>
+                      <span>{file}</span>
+                    </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        downloadFile(file, editorFilesHtml[file]);
+                      }}
+                      style={{
+                        background: "transparent",
+                        border: "none",
+                        color: "var(--text-dim)",
+                        cursor: "pointer",
+                        padding: "4px",
+                        display: "flex",
+                        alignItems: "center"
+                      }}
+                      title={`Download ${file}`}
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: "12px", height: "12px" }}>
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <polyline points="7 10 12 15 17 10" />
+                        <line x1="12" y1="15" x2="12" y2="3" />
+                      </svg>
+                    </button>
                   </div>
                 ))}
               </div>
@@ -1783,29 +2499,242 @@ export default function DashboardClient({ initialProfile }) {
                 <div className="code-tabs">
                   <div className="code-tab active">{activeFile}</div>
                 </div>
-                <div className="code-editor">
-                  {fileContents[activeFile]}
-                </div>
+                <div className={`code-editor ${codeGenerating ? "generating" : ""}`} id="codeEditor" dangerouslySetInnerHTML={{ __html: editorFilesHtml[activeFile] || "" }} />
                 
-                <div className="code-run-row">
-                  <button onClick={handleRunCode} className="run-btn" id="runBtn">
-                    <svg viewBox="0 0 24 24" fill="currentColor">
-                      <polygon points="5 3 19 12 5 21 5 3" />
+                <div className="code-actions-row">
+                  <div className="code-gen-status" id="codeGenStatus">
+                    {codeGenStatus}
+                  </div>
+                  <div className="code-actions">
+                    <button onClick={handleCopyCode} className="code-action-btn" id="copyCodeBtn">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <rect x="9" y="9" width="13" height="13" rx="2" />
+                        <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+                      </svg>
+                      Copy
+                    </button>
+                    <button onClick={() => showToast("Code inserted successfully!")} className="code-action-btn" id="insertCodeBtn">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M12 5v14M5 12h14" />
+                      </svg>
+                      Insert into file
+                    </button>
+                    <button onClick={() => { setCodePrompt("Regenerate file content"); setTimeout(() => handleGenerateCode(), 100); }} className="code-action-btn" id="regenBtn">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <polyline points="23 4 23 10 17 10" />
+                        <polyline points="1 20 1 14 7 14" />
+                        <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" />
+                      </svg>
+                      Regenerate
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <div className="code-prompt-wrap">
+              <form onSubmit={handleGenerateCode} className="code-prompt-bar" id="codePromptBar">
+                <svg className="cpb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <polyline points="16 18 22 12 16 6" />
+                  <polyline points="8 6 2 12 8 18" />
+                </svg>
+                <textarea
+                  id="codePromptInput"
+                  rows="1"
+                  placeholder="Describe the code you want generated — a function, a file, a refactor…"
+                  value={codePrompt}
+                  onChange={(e) => setCodePrompt(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      handleGenerateCode();
+                    }
+                  }}
+                />
+                <button type="submit" className="code-prompt-go" id="codePromptGo">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <line x1="22" y1="2" x2="11" y2="13" />
+                    <polygon points="22 2 15 22 11 13 2 9 22 2" />
+                  </svg>
+                </button>
+              </form>
+              <div className="composer-hint">Codeinc generates code — it doesn't execute it. Run generated code in your own environment.</div>
+            </div>
+          </div>
+
+          {/* ===== VISUAL WORKSPACE ===== */}
+          <div className={`view ${mode === "visual" ? "active" : ""}`} id="viewVisual">
+            <div className="ws-header">
+              <div className="ws-header-left">
+                <div className="ws-icon-big" style={{ background: "var(--visual)", boxShadow: "0 0 24px var(--visual-glow)" }}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <rect x="3" y="3" width="18" height="18" rx="2" />
+                    <circle cx="8.5" cy="8.5" r="1.5" />
+                    <polyline points="21 15 16 10 5 21" />
+                  </svg>
+                </div>
+                <div>
+                  <div className="ws-title">Visual</div>
+                  <div className="ws-subtitle" id="visualSubtitle">
+                    {visualType === "image" ? "Generate images from a text prompt" : "Generate short video clips from a text prompt"}
+                  </div>
+                </div>
+              </div>
+              <div className="visual-type-toggle" id="visualTypeToggle">
+                <button
+                  type="button"
+                  className={`vt-btn ${visualType === "image" ? "active" : ""}`}
+                  onClick={() => setVisualType("image")}
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <rect x="3" y="3" width="18" height="18" rx="2" />
+                    <circle cx="8.5" cy="8.5" r="1.5" />
+                    <polyline points="21 15 16 10 5 21" />
+                  </svg>
+                  Image
+                </button>
+                <button
+                  type="button"
+                  className={`vt-btn ${visualType === "video" ? "active" : ""}`}
+                  onClick={() => setVisualType("video")}
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polygon points="23 7 16 12 23 17 23 7" />
+                    <rect x="1" y="5" width="15" height="14" rx="2" />
+                  </svg>
+                  Video
+                </button>
+              </div>
+            </div>
+
+            <div className="visual-body">
+              <div className="visual-main">
+                <div className="visual-prompt-row">
+                  <textarea
+                    id="visualPrompt"
+                    rows={1}
+                    placeholder={visualType === "image" ? "Describe the image you want to generate…" : "Describe the video clip you want to generate…"}
+                    value={visualPrompt}
+                    onChange={(e) => setVisualPrompt(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        handleGenerateVisual();
+                      }
+                    }}
+                  />
+                  <button onClick={handleGenerateVisual} className="visual-go" id="visualGo" disabled={visualGenerating}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M12 2l1.5 5.5L19 9l-5.5 1.5L12 16l-1.5-5.5L5 9l5.5-1.5z" />
                     </svg>
-                    Run
+                    <span>{visualGenerating ? "Generating..." : "Generate"}</span>
                   </button>
-                  <span className="run-status" id="runStatus">
-                    {runStatusText}
-                  </span>
                 </div>
-                
-                <div className={`code-console ${codeConsoleOpen ? "open" : ""}`} id="codeConsole">
-                  {consoleLines.map((line, idx) => (
+
+                <div className="visual-options">
+                  <div className="vopt-group">
+                    <span className="vopt-label">Style</span>
+                    {["Photoreal", "Isometric", "Illustration", "3D render"].map((style) => (
+                      <button
+                        key={style}
+                        type="button"
+                        onClick={() => setVisualStyle(style)}
+                        className={`vopt-chip ${visualStyle === style ? "active" : ""}`}
+                      >
+                        {style}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="vopt-group" id="aspectGroup">
+                    <span className="vopt-label">Aspect</span>
+                    {["1:1", "16:9", "9:16"].map((aspect) => (
+                      <button
+                        key={aspect}
+                        type="button"
+                        onClick={() => setVisualAspect(aspect)}
+                        className={`vopt-chip ${visualAspect === aspect ? "active" : ""}`}
+                      >
+                        {aspect}
+                      </button>
+                    ))}
+                  </div>
+                  {visualType === "video" && (
+                    <div className="vopt-group" id="durationGroup">
+                      <span className="vopt-label">Duration</span>
+                      {["4s", "8s", "12s"].map((duration) => (
+                        <button
+                          key={duration}
+                          type="button"
+                          onClick={() => setVisualDuration(duration)}
+                          className={`vopt-chip ${visualDuration === duration ? "active" : ""}`}
+                        >
+                          {duration}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {visualGenerating && (
+                  <div className="visual-status" id="visualStatus">
+                    <div className="vdot"></div>
+                    <span>{visualStatusText}</span>
+                  </div>
+                )}
+
+                <div className="visual-grid" id="visualGrid">
+                  {visualTiles.length > 0 ? (
+                    visualTiles.map((tile) => (
+                      <div
+                        key={tile.id}
+                        className={`visual-tile ${tile.aspect === "16:9" ? "wide" : tile.aspect === "9:16" ? "tall" : ""}`}
+                      >
+                        <div className="visual-tile-label">
+                          {tile.style} · {tile.aspect} {tile.isVideo && "· Video"}
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    !visualGenerating && (
+                      <div className="visual-empty" id="visualEmpty">
+                        <div className="visual-empty-icon">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                            <rect x="3" y="3" width="18" height="18" rx="2" />
+                            <circle cx="8.5" cy="8.5" r="1.5" />
+                            <polyline points="21 15 16 10 5 21" />
+                          </svg>
+                        </div>
+                        <p>Generated {visualType === "image" ? "images" : "videos"} will appear here</p>
+                      </div>
+                    )
+                  )}
+                </div>
+              </div>
+
+              <div className="visual-sidebar">
+                <h4>History</h4>
+                <div id="visualHistoryCards">
+                  {visualHistory.map((item) => (
                     <div
-                      key={idx}
-                      className={`out-line ${line.startsWith("✓") ? "out-ok" : ""}`}
+                      key={item.id}
+                      onClick={() => {
+                        setVisualPrompt(item.title);
+                        setVisualStyle(item.style);
+                        setVisualAspect(item.aspect);
+                        setVisualType(item.isVideo ? "video" : "image");
+                        setVisualTiles([
+                          { id: item.id + 10, style: item.style, aspect: item.aspect, isVideo: item.isVideo }
+                        ]);
+                      }}
+                      className="vhist-card"
                     >
-                      {line}
+                      <div className={`vhist-thumb ${item.thumbClass}`}></div>
+                      <div className="vhist-meta">
+                        <div className="vhist-title">{item.title}</div>
+                        <div className="vhist-sub">
+                          {item.style} · {item.aspect}
+                        </div>
+                      </div>
                     </div>
                   ))}
                 </div>

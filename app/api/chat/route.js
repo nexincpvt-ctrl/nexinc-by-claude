@@ -4,6 +4,8 @@ import { getMessages } from "@/lib/supabase/queries";
 import { NVIDIA_FREE_MODELS } from "@/lib/ai/nvidiaModels";
 import { isVisionCapable } from "@/lib/ai/modelTags";
 
+export const maxDuration = 60;
+
 // Helper to format database history messages for vision/multimodal endpoints
 function formatVisionMessages(dbMessages) {
   return dbMessages.map((m) => {
@@ -56,9 +58,15 @@ function formatAnthropicMessages(dbMessages) {
   }).filter(Boolean);
 }
 
+const supportsReasoningEffort = (modelId) => {
+  const id = modelId.toLowerCase();
+  if (id.includes("o1-mini") || id.includes("o1-preview")) return false;
+  return id.startsWith("o1") || id.startsWith("o3-mini");
+};
+
 export async function POST(req) {
   try {
-    const { sessionId, messageText, messages: clientMessages, model, imageUrl } = await req.json();
+    const { sessionId, messageText, messages: clientMessages, model, imageUrl, reasoningEffort } = await req.json();
 
     if (!model) {
       return NextResponse.json(
@@ -73,14 +81,15 @@ export async function POST(req) {
     let mockReply = "";
 
     // Map curated custom free models to their real provider endpoints
-    if (model.includes("gpt-oss-120b")) {
-      if (model.includes("openrouter")) {
-        provider = "openrouter";
-        providerModelId = "meta-llama/llama-3-8b-instruct:free";
-      } else {
-        provider = "openai";
-        providerModelId = "gpt-4o-mini";
-      }
+    if (model === "gpt-oss-120b") {
+      provider = "groq";
+      providerModelId = "llama-3.3-70b-versatile";
+    } else if (model === "zai-glm-4.7") {
+      provider = "groq";
+      providerModelId = "llama-3.3-70b-versatile";
+    } else if (model.includes("gpt-oss-120b")) {
+      provider = "groq";
+      providerModelId = "llama-3.3-70b-versatile";
     } else if (model.includes("llama-3.3-70b")) {
       provider = "groq";
       providerModelId = "llama-3.3-70b-versatile";
@@ -100,8 +109,8 @@ export async function POST(req) {
       provider = "nvidia";
       providerModelId = "nvidia/nemotron-mini-4b-instruct";
     } else if (model === "gpt-oss-20b") {
-      provider = "openai";
-      providerModelId = "gpt-4o-mini";
+      provider = "groq";
+      providerModelId = "llama-3.3-70b-versatile";
     } else if (model.includes("gemma-4-")) {
       provider = "groq";
       providerModelId = "gemma2-9b-it";
@@ -111,6 +120,12 @@ export async function POST(req) {
     } else if (model === "gpt-4o") {
       provider = "openai";
       providerModelId = "gpt-4o";
+    } else if (model === "o1") {
+      provider = "openai";
+      providerModelId = "o1";
+    } else if (model === "o3-mini") {
+      provider = "openai";
+      providerModelId = "o3-mini";
     } else if (model === "gpt-5.5" || model === "gpt-5.5-pro" || model === "gpt-5.4" || model === "gpt-5.4-pro") {
       provider = "openai";
       providerModelId = "gpt-4o";
@@ -159,6 +174,12 @@ export async function POST(req) {
     } else if (model === "my-local-model") {
       provider = "mock";
       mockReply = "🤖 My Local Model: Connected successfully! I am running on localhost:11434 via Ollama. 💻";
+    } else if (["dall-e-3", "flux-schnell", "midjourney-v6", "stable-diffusion-3.5"].includes(model)) {
+      provider = "mock-gen";
+      providerModelId = model;
+    } else if (["sora", "kling-1.5", "runway-gen3", "luma-dream-machine"].includes(model)) {
+      provider = "mock-gen";
+      providerModelId = model;
     } else if (model.startsWith("groq-")) {
       provider = "groq";
       providerModelId = model.replace("groq-", "");
@@ -192,6 +213,37 @@ export async function POST(req) {
           }
         ]
       });
+    }
+
+    // Handle Generation Models immediately
+    if (provider === "mock-gen") {
+      if (["dall-e-3", "flux-schnell", "midjourney-v6", "stable-diffusion-3.5"].includes(model)) {
+        const generatedImageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(messageText)}?width=1024&height=1024&nologo=true`;
+        return NextResponse.json({
+          choices: [
+            {
+              message: {
+                role: "assistant",
+                content: `🎨 **Generated Image** for prompt: *"${messageText}"*\n\n![Generated Image](${generatedImageUrl})\n\n*(Powered by ${model.toUpperCase()})*`,
+              },
+            },
+          ],
+        });
+      }
+
+      if (["sora", "kling-1.5", "runway-gen3", "luma-dream-machine"].includes(model)) {
+        const stockVideoUrl = "https://assets.mixkit.co/videos/preview/mixkit-abstract-laser-lights-background-loop-41851-large.mp4";
+        return NextResponse.json({
+          choices: [
+            {
+              message: {
+                role: "assistant",
+                content: `🎬 **Generated Video** for prompt: *"${messageText}"*\n\nHere is your generated simulated clip:\n\n[▶ Click here to play video](${stockVideoUrl})\n\n*(Powered by ${model.toUpperCase()})*`,
+              },
+            },
+          ],
+        });
+      }
     }
 
     // 1. Handle Mock Models immediately
@@ -293,6 +345,7 @@ export async function POST(req) {
         body: JSON.stringify({
           model: providerModelId,
           messages: messages,
+          stream: true,
         }),
       });
 
@@ -302,8 +355,13 @@ export async function POST(req) {
         throw new Error(`Groq API returned status ${response.status}`);
       }
 
-      const data = await response.json();
-      return NextResponse.json(data);
+      return new Response(response.body, {
+        headers: {
+          "Content-Type": response.headers.get("content-type") || "text/event-stream",
+          "Cache-Control": "no-cache",
+          "Connection": "keep-alive",
+        },
+      });
     }
 
     // 4. Handle OpenRouter Provider
@@ -336,6 +394,8 @@ export async function POST(req) {
         body: JSON.stringify({
           model: providerModelId,
           messages: messages,
+          stream: true,
+          ...(reasoningEffort && supportsReasoningEffort(providerModelId) ? { reasoning_effort: reasoningEffort } : {}),
         }),
       });
 
@@ -345,8 +405,13 @@ export async function POST(req) {
         throw new Error(`OpenRouter API returned status ${response.status}`);
       }
 
-      const data = await response.json();
-      return NextResponse.json(data);
+      return new Response(response.body, {
+        headers: {
+          "Content-Type": response.headers.get("content-type") || "text/event-stream",
+          "Cache-Control": "no-cache",
+          "Connection": "keep-alive",
+        },
+      });
     }
 
     // 5. Handle NVIDIA Provider
@@ -377,6 +442,7 @@ export async function POST(req) {
         body: JSON.stringify({
           model: providerModelId,
           messages: messages,
+          stream: true,
         }),
       });
 
@@ -386,18 +452,24 @@ export async function POST(req) {
         throw new Error(`NVIDIA API returned status ${response.status}`);
       }
 
-      const data = await response.json();
-      return NextResponse.json(data);
+      return new Response(response.body, {
+        headers: {
+          "Content-Type": response.headers.get("content-type") || "text/event-stream",
+          "Cache-Control": "no-cache",
+          "Connection": "keep-alive",
+        },
+      });
     }
 
     // 6. Handle Direct OpenAI-compatible Providers (OpenAI, Gemini, Perplexity, DeepSeek)
-    const directEndpoints = {
-      openai: { url: "https://api.openai.com/v1/chat/completions", key: process.env.OPENAI_API_KEY },
-      gemini: { url: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", key: process.env.GEMINI_API_KEY },
-      perplexity: { url: "https://api.perplexity.ai/chat/completions", key: process.env.PERPLEXITY_API_KEY },
-      deepseek: { url: "https://api.deepseek.com/chat/completions", key: process.env.DEEPSEEK_API_KEY },
-      mistral: { url: "https://api.mistral.ai/v1/chat/completions", key: process.env.MISTRAL_API_KEY },
-    };
+     const directEndpoints = {
+       openai: { url: "https://api.openai.com/v1/chat/completions", key: process.env.OPENAI_API_KEY },
+       gemini: { url: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", key: process.env.GEMINI_API_KEY },
+       perplexity: { url: "https://api.perplexity.ai/chat/completions", key: process.env.PERPLEXITY_API_KEY },
+       deepseek: { url: "https://api.deepseek.com/chat/completions", key: process.env.DEEPSEEK_API_KEY },
+       mistral: { url: "https://api.mistral.ai/v1/chat/completions", key: process.env.MISTRAL_API_KEY },
+       cerebras: { url: "https://api.cerebras.ai/v1/chat/completions", key: process.env.CEREBRAS_API_KEY },
+     };
 
     if (directEndpoints[provider]) {
       const endpoint = directEndpoints[provider];
@@ -428,6 +500,8 @@ export async function POST(req) {
         body: JSON.stringify({
           model: providerModelId,
           messages: messages,
+          stream: true,
+          ...(reasoningEffort && supportsReasoningEffort(providerModelId) ? { reasoning_effort: reasoningEffort } : {}),
         }),
       });
 
@@ -443,6 +517,7 @@ export async function POST(req) {
           body: JSON.stringify({
             model: "gemini-2.5-flash",
             messages: messages,
+            stream: true,
           }),
         });
       }
@@ -453,8 +528,13 @@ export async function POST(req) {
         throw new Error(`Direct ${provider} API returned status ${response.status}`);
       }
 
-      const data = await response.json();
-      return NextResponse.json(data);
+      return new Response(response.body, {
+        headers: {
+          "Content-Type": response.headers.get("content-type") || "text/event-stream",
+          "Cache-Control": "no-cache",
+          "Connection": "keep-alive",
+        },
+      });
     }
 
     // 7. Handle Direct Anthropic Provider
@@ -525,7 +605,8 @@ export async function POST(req) {
         body: JSON.stringify({
           model: providerModelId,
           messages: anthropicMessages,
-          max_tokens: 4096
+          max_tokens: 4096,
+          stream: true,
         })
       });
 
@@ -535,19 +616,57 @@ export async function POST(req) {
         throw new Error(`Direct Anthropic API returned status ${response.status}`);
       }
 
-      const data = await response.json();
+      // Response body is consumed as a stream below
       
-      // Map Anthropic response to OpenAI format for frontend compatibility
-      const replyText = data.content?.[0]?.text || "";
-      return NextResponse.json({
-        choices: [
-          {
-            message: {
-              role: "assistant",
-              content: replyText
+      // Transform Anthropic SSE stream to OpenAI-compatible SSE format
+      const anthropicStream = new ReadableStream({
+        async start(controller) {
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
+
+          try {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+
+              buffer += decoder.decode(value, { stream: true });
+              const lines = buffer.split("\n");
+              buffer = lines.pop();
+
+              for (const line of lines) {
+                if (line.startsWith("data: ")) {
+                  try {
+                    const parsed = JSON.parse(line.slice(6));
+                    if (parsed.type === "content_block_delta" && parsed.delta?.text) {
+                      const openaiChunk = {
+                        choices: [{ delta: { content: parsed.delta.text } }],
+                      };
+                      controller.enqueue(
+                        new TextEncoder().encode(`data: ${JSON.stringify(openaiChunk)}\n\n`)
+                      );
+                    }
+                  } catch (e) {
+                    // Skip unparseable lines
+                  }
+                }
+              }
             }
+          } catch (err) {
+            console.error("Error reading Anthropic stream:", err);
           }
-        ]
+
+          controller.enqueue(new TextEncoder().encode("data: [DONE]\n\n"));
+          controller.close();
+        },
+      });
+
+      return new Response(anthropicStream, {
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          "Connection": "keep-alive",
+        },
       });
     }
 

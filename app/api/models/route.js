@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCachedFreeModels } from "@/lib/ai/freeModels";
-import { getModelTags } from "@/lib/ai/modelTags";
+import { getModelTags, isVisionCapable } from "@/lib/ai/modelTags";
 
 export async function GET() {
   try {
@@ -9,7 +9,7 @@ export async function GET() {
     const mappedFree = combinedFree.map((model) => ({
       ...model,
       tags: model.tags || getModelTags(model.providerModelId),
-      vision: false,
+      vision: model.vision ?? isVisionCapable(model.providerModelId),
     }));
     
     return NextResponse.json({
