@@ -5,6 +5,40 @@ import os from "os";
 
 export const maxDuration = 60;
 
+function parseWorkspaceFiles(accumulatedText) {
+  const files = {};
+  const blockRegex = /```([a-zA-Z0-9+#-]+)?\n([\s\S]*?)(?:```|$)/g;
+  let match;
+  
+  while ((match = blockRegex.exec(accumulatedText)) !== null) {
+    const lang = (match[1] || "").toLowerCase();
+    const body = match[2];
+    const lines = body.split("\n");
+    let fileName = "";
+    
+    for (let i = 0; i < Math.min(lines.length, 3); i++) {
+      const line = lines[i].trim();
+      const fileMatch = line.match(/(?:<!--|\/\*|\/\/|#)\s*([a-zA-Z0-9._-]+)\s*(?:-->|\*\/)?/);
+      if (fileMatch) {
+        fileName = fileMatch[1].trim();
+        break;
+      }
+    }
+    
+    if (!fileName) {
+      if (lang === "html") fileName = "index.html";
+      else if (lang === "css") fileName = "style.css";
+      else if (lang === "javascript" || lang === "js") fileName = "script.js";
+      else if (lang === "python" || lang === "py") fileName = "main.py";
+      else fileName = `code_${lang || "text"}.txt`;
+    }
+    
+    files[fileName] = body;
+  }
+  
+  return files;
+}
+
 export async function POST(req) {
   try {
     const { prompt, model = "meta/llama-3.3-70b-instruct" } = await req.json();
@@ -14,38 +48,33 @@ export async function POST(req) {
     }
 
     const systemPrompt = `You are an expert frontend web development assistant.
-Generate a complete working web page based on the user's request.
-You must output HTML, CSS, and JavaScript as separate, standalone code blocks.
+Generate a complete working project based on the user's request.
+You must output HTML, CSS, JavaScript, and any other files as separate markdown code blocks.
 
-Use the following exact markdown formats:
-\`\`\`html
-<!-- index.html -->
-...
-\`\`\`
+For every file you generate, start the code block with a comment indicating the exact file name (e.g. <!-- filename.html -->, /* filename.css */, // filename.js, # filename.py). Always use lowercase filenames.
+Make sure to link styles and script files in index.html (e.g. <link rel="stylesheet" href="style.css"> and <script src="script.js"></script>) so the page functions.
 
-\`\`\`css
-/* style.css */
-...
-\`\`\`
+Return ONLY the markdown code blocks. Do not add explanations or any other text before or after the code blocks.`;
 
-\`\`\`javascript
-// script.js
-...
-\`\`\`
+    let apiUrl = "https://integrate.api.nvidia.com/v1/chat/completions";
+    let apiKey = "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";
+    let providerModelId = model;
 
-The index.html MUST link style.css via <link rel="stylesheet" href="style.css"> and script.js via <script src="script.js"></script> so they are fully integrated.
-Return ONLY these three markdown code blocks. Do not add explanations or any other text before or after the code blocks.`;
+    // Route to Sakana AI if model starts with sakana/
+    if (model.startsWith("sakana/")) {
+      apiUrl = "https://api.sakana.ai/v1/chat/completions";
+      apiKey = "fish_3c6c035b626bc738bb4de46e5ec0d79c3835de7cff0b7244c5fc8b1ab4a2f840";
+      providerModelId = model.replace("sakana/", "");
+    }
 
-    const apiKey = "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";
-    
-    const response = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
+    const response = await fetch(apiUrl, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${apiKey}`,
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        model: model,
+        model: providerModelId,
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: prompt }
@@ -58,8 +87,8 @@ Return ONLY these three markdown code blocks. Do not add explanations or any oth
 
     if (!response.ok) {
       const errText = await response.text();
-      console.error("NVIDIA API error:", errText);
-      return NextResponse.json({ error: `NVIDIA API error: ${response.statusText}` }, { status: 500 });
+      console.error(`${model.startsWith("sakana/") ? "Sakana AI" : "NVIDIA"} API error:`, errText);
+      return NextResponse.json({ error: `API error: ${response.statusText}` }, { status: 500 });
     }
 
     const decoder = new TextDecoder();
@@ -87,34 +116,18 @@ Return ONLY these three markdown code blocks. Do not add explanations or any oth
                 }
               }
 
-              // Extract files
-              const htmlRegex = /```html\n([\s\S]*?)(?:```|$)/i;
-              const htmlMatch = cleanText.match(htmlRegex);
-              let htmlCode = htmlMatch ? htmlMatch[1] : "";
-
-              const cssRegex = /```css\n([\s\S]*?)(?:```|$)/i;
-              const cssMatch = cleanText.match(cssRegex);
-              let cssCode = cssMatch ? cssMatch[1] : "";
-
-              const jsRegex = /```(?:javascript|js)\n([\s\S]*?)(?:```|$)/i;
-              const jsMatch = cleanText.match(jsRegex);
-              let jsCode = jsMatch ? jsMatch[1] : "";
-
-              if (!htmlCode && !cssCode && !jsCode) {
-                htmlCode = cleanText;
-              }
-
-              // Save temp files for code extraction
+              // Extract files dynamically
+              const parsedFiles = parseWorkspaceFiles(cleanText);
               const tempDir = path.join(os.tmpdir(), "codeinc-extraction");
               if (!fs.existsSync(tempDir)) {
                 fs.mkdirSync(tempDir, { recursive: true });
               }
 
-              fs.writeFileSync(path.join(tempDir, "index.html"), htmlCode);
-              fs.writeFileSync(path.join(tempDir, "style.css"), cssCode);
-              fs.writeFileSync(path.join(tempDir, "script.js"), jsCode);
+              Object.keys(parsedFiles).forEach(fileName => {
+                fs.writeFileSync(path.join(tempDir, fileName), parsedFiles[fileName]);
+              });
 
-              console.log(`Stream complete. Temp files saved to ${tempDir}`);
+              console.log(`Stream complete. ${Object.keys(parsedFiles).length} files saved to ${tempDir}`);
               controller.close();
               break;
             }

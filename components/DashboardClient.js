@@ -1142,6 +1142,40 @@ export default function DashboardClient({ initialProfile }) {
     showToast(`${fileName} downloaded successfully!`);
   };
 
+  const parseWorkspaceFiles = (accumulatedText) => {
+    const files = {};
+    const blockRegex = /```([a-zA-Z0-9+#-]+)?\n([\s\S]*?)(?:```|$)/g;
+    let match;
+    
+    while ((match = blockRegex.exec(accumulatedText)) !== null) {
+      const lang = (match[1] || "").toLowerCase();
+      const body = match[2];
+      const lines = body.split("\n");
+      let fileName = "";
+      
+      for (let i = 0; i < Math.min(lines.length, 3); i++) {
+        const line = lines[i].trim();
+        const fileMatch = line.match(/(?:<!--|\/\*|\/\/|#)\s*([a-zA-Z0-9._-]+)\s*(?:-->|\*\/)?/);
+        if (fileMatch) {
+          fileName = fileMatch[1].trim();
+          break;
+        }
+      }
+      
+      if (!fileName) {
+        if (lang === "html") fileName = "index.html";
+        else if (lang === "css") fileName = "style.css";
+        else if (lang === "javascript" || lang === "js") fileName = "script.js";
+        else if (lang === "python" || lang === "py") fileName = "main.py";
+        else fileName = `code_${lang || "text"}.txt`;
+      }
+      
+      files[fileName] = body;
+    }
+    
+    return files;
+  };
+
   const handleGenerateCode = async (e) => {
     if (e) e.preventDefault();
     if (!codePrompt.trim()) return;
@@ -1149,13 +1183,6 @@ export default function DashboardClient({ initialProfile }) {
     setCodePrompt("");
     setCodeGenerating(true);
     setCodeGenStatus("Connecting to Nvidia NIM stream…");
-    
-    // Clear index, style, script
-    setEditorFilesHtml({
-      "index.html": '<span class="gen-cursor"></span>',
-      "style.css": '',
-      "script.js": ''
-    });
 
     try {
       const res = await fetch("/api/codeinc/generate", {
@@ -1199,49 +1226,36 @@ export default function DashboardClient({ initialProfile }) {
           }
         }
 
-        // Match tags live
-        const htmlMatch = accumulatedRawText.match(/```html\n([\s\S]*?)(?:```|$)/i);
-        const cssMatch = accumulatedRawText.match(/```css\n([\s\S]*?)(?:```|$)/i);
-        const jsMatch = accumulatedRawText.match(/```(?:javascript|js)\n([\s\S]*?)(?:```|$)/i);
-
-        let currentHtml = htmlMatch ? htmlMatch[1] : "";
-        let currentCss = cssMatch ? cssMatch[1] : "";
-        let currentJs = jsMatch ? jsMatch[1] : "";
-
-        // Fallback for non-tagged text
-        if (!htmlMatch && !cssMatch && !jsMatch) {
-          currentHtml = accumulatedRawText;
-        }
-
-        setEditorFilesHtml({
-          "index.html": formatCodeForEditor(currentHtml) + (activeFile === "index.html" ? '<span class="gen-cursor"></span>' : ''),
-          "style.css": formatCodeForEditor(currentCss) + (activeFile === "style.css" ? '<span class="gen-cursor"></span>' : ''),
-          "script.js": formatCodeForEditor(currentJs) + (activeFile === "script.js" ? '<span class="gen-cursor"></span>' : '')
+        // Live parse all generated files and merge with previous files
+        const parsedFiles = parseWorkspaceFiles(accumulatedRawText);
+        setEditorFilesHtml(prev => {
+          const updated = { ...prev };
+          Object.keys(parsedFiles).forEach(fileName => {
+            updated[fileName] = formatCodeForEditor(parsedFiles[fileName]) + '<span class="gen-cursor"></span>';
+          });
+          return updated;
         });
       }
 
-      // Final format to remove cursor
-      const htmlFinalMatch = accumulatedRawText.match(/```html\n([\s\S]*?)(?:```|$)/i);
-      const cssFinalMatch = accumulatedRawText.match(/```css\n([\s\S]*?)(?:```|$)/i);
-      const jsFinalMatch = accumulatedRawText.match(/```(?:javascript|js)\n([\s\S]*?)(?:```|$)/i);
-
-      let finalHtml = htmlFinalMatch ? htmlFinalMatch[1] : "";
-      let finalCss = cssFinalMatch ? cssFinalMatch[1] : "";
-      let finalJs = jsFinalMatch ? jsFinalMatch[1] : "";
-
-      if (!htmlFinalMatch && !cssFinalMatch && !jsFinalMatch) {
-        finalHtml = accumulatedRawText;
-      }
-
-      setEditorFilesHtml({
-        "index.html": formatCodeForEditor(finalHtml),
-        "style.css": formatCodeForEditor(finalCss),
-        "script.js": formatCodeForEditor(finalJs)
+      // Clean cursors
+      const finalFiles = parseWorkspaceFiles(accumulatedRawText);
+      setEditorFilesHtml(prev => {
+        const updated = { ...prev };
+        Object.keys(finalFiles).forEach(fileName => {
+          updated[fileName] = formatCodeForEditor(finalFiles[fileName]);
+        });
+        return updated;
       });
 
+      // Auto-select the first generated file if there are any
+      const generatedKeys = Object.keys(finalFiles);
+      if (generatedKeys.length > 0) {
+        setActiveFile(generatedKeys[0]);
+      }
+
       setCodeGenerating(false);
-      setCodeGenStatus("Success · Live streaming complete");
-      showToast("Web code streamed live & extracted successfully!");
+      setCodeGenStatus("Success · Projects updated");
+      showToast("Workspace code updated and new files extracted!");
 
     } catch (err) {
       console.error(err);
@@ -1263,6 +1277,27 @@ export default function DashboardClient({ initialProfile }) {
     
     navigator.clipboard?.writeText(plainText).catch(() => {});
     showToast("Code copied to clipboard!");
+  };
+
+  const handleDownloadZip = async () => {
+    try {
+      showToast("Preparing ZIP download...");
+      const res = await fetch("/api/codeinc/download");
+      if (!res.ok) {
+        throw new Error("Failed to download ZIP file.");
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "workspace.zip";
+      link.click();
+      URL.revokeObjectURL(url);
+      showToast("Project downloaded as ZIP!");
+    } catch (err) {
+      console.error(err);
+      showToast("Download failed: " + err.message);
+    }
   };
 
   // Interactive workspaces simulation: Visual Workspace Generator
@@ -2433,14 +2468,20 @@ export default function DashboardClient({ initialProfile }) {
                     borderRadius: "3px"
                   }}
                 >
-                  <option value="meta/llama-3.3-70b-instruct">meta/llama-3.3-70b-instruct</option>
-                  <option value="meta/llama-3.1-70b-instruct">meta/llama-3.1-70b-instruct</option>
-                  <option value="meta/llama-3.1-8b-instruct">meta/llama-3.1-8b-instruct</option>
-                  <option value="meta/llama-3.2-3b-instruct">meta/llama-3.2-3b-instruct</option>
-                  <option value="meta/llama-3.2-1b-instruct">meta/llama-3.2-1b-instruct</option>
-                  <option value="microsoft/phi-4-mini-instruct">microsoft/phi-4-mini-instruct</option>
-                  <option value="google/gemma-2-2b-it">google/gemma-2-2b-it</option>
-                  <option value="mistralai/mixtral-8x7b-instruct-v0.1">mistralai/mixtral-8x7b-instruct-v0.1</option>
+                  <optgroup label="NVIDIA Models" style={{ background: "var(--panel-2)", color: "var(--text-dim)" }}>
+                    <option value="meta/llama-3.3-70b-instruct" style={{ color: "var(--text)" }}>meta/llama-3.3-70b-instruct</option>
+                    <option value="meta/llama-3.1-70b-instruct" style={{ color: "var(--text)" }}>meta/llama-3.1-70b-instruct</option>
+                    <option value="meta/llama-3.1-8b-instruct" style={{ color: "var(--text)" }}>meta/llama-3.1-8b-instruct</option>
+                    <option value="meta/llama-3.2-3b-instruct" style={{ color: "var(--text)" }}>meta/llama-3.2-3b-instruct</option>
+                    <option value="meta/llama-3.2-1b-instruct" style={{ color: "var(--text)" }}>meta/llama-3.2-1b-instruct</option>
+                    <option value="microsoft/phi-4-mini-instruct" style={{ color: "var(--text)" }}>microsoft/phi-4-mini-instruct</option>
+                    <option value="google/gemma-2-2b-it" style={{ color: "var(--text)" }}>google/gemma-2-2b-it</option>
+                    <option value="mistralai/mixtral-8x7b-instruct-v0.1" style={{ color: "var(--text)" }}>mistralai/mixtral-8x7b-instruct-v0.1</option>
+                  </optgroup>
+                  <optgroup label="Sakana AI (Fugu)" style={{ background: "var(--panel-2)", color: "var(--text-dim)" }}>
+                    <option value="sakana/fugu" style={{ color: "var(--text)" }}>sakana/fugu</option>
+                    <option value="sakana/fugu-ultra" style={{ color: "var(--text)" }}>sakana/fugu-ultra</option>
+                  </optgroup>
                 </select>
                 <button onClick={() => handleModeChange("text")} className="ws-back">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -2518,6 +2559,14 @@ export default function DashboardClient({ initialProfile }) {
                         <path d="M12 5v14M5 12h14" />
                       </svg>
                       Insert into file
+                    </button>
+                    <button onClick={handleDownloadZip} className="code-action-btn" id="downloadZipBtn">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <polyline points="7 10 12 15 17 10" />
+                        <line x1="12" y1="15" x2="12" y2="3" />
+                      </svg>
+                      Download ZIP
                     </button>
                     <button onClick={() => { setCodePrompt("Regenerate file content"); setTimeout(() => handleGenerateCode(), 100); }} className="code-action-btn" id="regenBtn">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
