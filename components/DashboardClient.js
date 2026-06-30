@@ -114,11 +114,12 @@ const ultimateModels = [
   { key: "my-local-model", label: "My Local Model", provider: "mock", providerModelId: "my-local-model", tier: "ultimate" },
 ];
 
-const modeRailX = { text: '0%', visual: '100%', codeinc: '200%' };
+const modeRailX = { text: '0%', visual: '100%', codeinc: '200%', nexstudy: '300%' };
 const modeColorVar = {
   text: ['var(--signal)', 'var(--signal-glow)'],
   visual: ['var(--visual)', 'var(--visual-glow)'],
-  codeinc: ['var(--code-accent)', 'var(--code-glow)']
+  codeinc: ['var(--code-accent)', 'var(--code-glow)'],
+  nexstudy: ['var(--study-accent, #a78bfa)', 'var(--study-glow, rgba(167,139,250,0.35))']
 };
 
 export default function DashboardClient({ initialProfile }) {
@@ -200,6 +201,105 @@ export default function DashboardClient({ initialProfile }) {
   const [codeGenerating, setCodeGenerating] = useState(false);
   const [codeGenStatus, setCodeGenStatus] = useState("Awaiting prompt · HTML/CSS/JS");
   const [nvidiaModel, setNvidiaModel] = useState("meta/llama-3.3-70b-instruct");
+  const [managerModel, setManagerModel] = useState("groq/llama-3.3-70b-versatile");
+  const [copilotStep, setCopilotStep] = useState("idle"); // 'idle', 'analyzing', 'options_ready', 'planning', 'plan_ready', 'coding', 'qa', 'finished', 'error'
+  const [copilotLogs, setCopilotLogs] = useState([]);
+  const [followUpQuestion, setFollowUpQuestion] = useState("");
+  const [suggestedDesign, setSuggestedDesign] = useState("");
+  const [followUpOptions, setFollowUpOptions] = useState([]);
+  const [selectedOption, setSelectedOption] = useState("");
+  const [customReplyText, setCustomReplyText] = useState("");
+  const [copilotPlan, setCopilotPlan] = useState("");
+  const [hiddenPrompt, setHiddenPrompt] = useState("");
+  const [qaCritiqueLog, setQaCritiqueLog] = useState("");
+  const [copilotPanelOpen, setCopilotPanelOpen] = useState(true);
+
+  const [codeProjects, setCodeProjects] = useState([
+    {
+      id: "project-default",
+      name: "web-project",
+      files: {
+        "index.html": ``,
+        "style.css": ``,
+        "script.js": ``
+      }
+    }
+  ]);
+  const [activeProjectId, setActiveProjectId] = useState("project-default");
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("codeinc_projects");
+      const savedActive = localStorage.getItem("codeinc_active_project");
+      const savedCoding = localStorage.getItem("codeinc_coding_model");
+      const savedManager = localStorage.getItem("codeinc_manager_model");
+      if (savedCoding) setNvidiaModel(savedCoding);
+      if (savedManager) setManagerModel(savedManager);
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (parsed && parsed.length > 0) {
+            setCodeProjects(parsed);
+            const activeId = savedActive || parsed[0].id;
+            setActiveProjectId(activeId);
+            const activeProj = parsed.find(p => p.id === activeId);
+            if (activeProj) {
+              setEditorFilesHtml(activeProj.files);
+              const files = Object.keys(activeProj.files);
+              setActiveFile(files[0] || "");
+            }
+          }
+        } catch (e) {}
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem("codeinc_coding_model", nvidiaModel);
+  }, [nvidiaModel]);
+
+  useEffect(() => {
+    localStorage.setItem("codeinc_manager_model", managerModel);
+  }, [managerModel]);
+
+  const [currentPreviewFile, setCurrentPreviewFile] = useState("index.html");
+  const [previewHistory, setPreviewHistory] = useState(["index.html"]);
+  const [previewHistoryIndex, setPreviewHistoryIndex] = useState(0);
+  const [previewRefreshKey, setPreviewRefreshKey] = useState(0);
+  const [previewFullscreen, setPreviewFullscreen] = useState(false);
+
+  const navigatePreviewTo = (file) => {
+    const newHistory = previewHistory.slice(0, previewHistoryIndex + 1);
+    newHistory.push(file);
+    setPreviewHistory(newHistory);
+    setPreviewHistoryIndex(newHistory.length - 1);
+    setCurrentPreviewFile(file);
+  };
+
+  const handlePreviewBack = () => {
+    if (previewHistoryIndex > 0) {
+      setPreviewHistoryIndex(previewHistoryIndex - 1);
+      setCurrentPreviewFile(previewHistory[previewHistoryIndex - 1]);
+    }
+  };
+
+  const handlePreviewForward = () => {
+    if (previewHistoryIndex < previewHistory.length - 1) {
+      setPreviewHistoryIndex(previewHistoryIndex + 1);
+      setCurrentPreviewFile(previewHistory[previewHistoryIndex + 1]);
+    }
+  };
+
+  useEffect(() => {
+    const handlePreviewNavigate = (event) => {
+      if (event.data && event.data.type === "preview-navigate") {
+        const targetFile = event.data.file;
+        navigatePreviewTo(targetFile);
+      }
+    };
+    window.addEventListener("message", handlePreviewNavigate);
+    return () => window.removeEventListener("message", handlePreviewNavigate);
+  }, [previewHistory, previewHistoryIndex]);
   
   // Loading indicators
   const [loadingSessions, setLoadingSessions] = useState(false);
@@ -207,6 +307,335 @@ export default function DashboardClient({ initialProfile }) {
   
   // UI Alerts / Toast
   const [toast, setToast] = useState({ message: "", visible: false });
+  const [customModal, setCustomModal] = useState(null);
+  const [customModalInputVal, setCustomModalInputVal] = useState("");
+  const [createResourceModalOpen, setCreateResourceModalOpen] = useState(false);
+  const [newResourceName, setNewResourceName] = useState("");
+  const [newResourceType, setNewResourceType] = useState("html"); // 'html', 'jsx', 'js', 'css', 'folder', 'custom'
+  const [selectedParentFolder, setSelectedParentFolder] = useState("/");
+  const [collapsedFolders, setCollapsedFolders] = useState({});
+
+  const buildFileTree = (files) => {
+    const root = { name: "Root", type: "folder", children: {}, path: "" };
+    Object.keys(files).forEach((filePath) => {
+      const parts = filePath.split("/");
+      let current = root;
+      for (let i = 0; i < parts.length; i++) {
+        const part = parts[i];
+        if (!part) continue;
+        const isLast = i === parts.length - 1;
+        const currentPath = current.path ? `${current.path}/${part}` : part;
+        
+        if (!current.children) {
+          current.children = {};
+          current.type = "folder";
+        }
+        
+        if (isLast) {
+          if (part === ".keep") {
+            current.type = "folder";
+          } else {
+            current.children[part] = {
+              name: part,
+              type: "file",
+              path: currentPath
+            };
+          }
+        } else {
+          if (!current.children[part]) {
+            current.children[part] = {
+              name: part,
+              type: "folder",
+              children: {},
+              path: currentPath
+            };
+          }
+          current = current.children[part];
+        }
+      }
+    });
+    return root;
+  };
+
+  const toggleFolder = (folderPath, e) => {
+    if (e) e.stopPropagation();
+    setCollapsedFolders(prev => ({
+      ...prev,
+      [folderPath]: !prev[folderPath]
+    }));
+  };
+
+  const renderSidebarTree = (node, depth = 0) => {
+    if (node.path === "") {
+      return (
+        <div className="space-y-1">
+          {Object.keys(node.children)
+            .sort()
+            .map(key => renderSidebarTree(node.children[key], depth))}
+        </div>
+      );
+    }
+
+    const isFolder = node.type === "folder";
+    const isCollapsed = collapsedFolders[node.path];
+    const isFileActive = activeFile === node.path;
+    const paddingLeft = `${depth * 12 + 6}px`;
+
+    if (isFolder) {
+      return (
+        <div key={node.path} className="folder-node-wrapper">
+          <div
+            onClick={(e) => toggleFolder(node.path, e)}
+            className="chat-item folder-row"
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              cursor: "pointer",
+              paddingLeft: paddingLeft,
+              paddingTop: "4px",
+              paddingBottom: "4px",
+              minHeight: "28px"
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "6px", overflow: "hidden" }}>
+              <span style={{ display: "flex", alignItems: "center", justifyContent: "center", width: "10px", height: "10px" }}>
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  style={{
+                    width: "8px",
+                    height: "8px",
+                    transform: isCollapsed ? "rotate(-90deg)" : "rotate(0deg)",
+                    transition: "transform 0.15s ease",
+                    color: "var(--text-dim)"
+                  }}
+                >
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              </span>
+              <span className="ci-title font-sans font-semibold text-xs text-[#8A919C] hover:text-white transition-colors" style={{ textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>
+                {node.name}/
+              </span>
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelectedParentFolder(node.path);
+                  setNewResourceType("html");
+                  setNewResourceName("");
+                  setCreateResourceModalOpen(true);
+                }}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: "#5EE0A8",
+                  cursor: "pointer",
+                  padding: "4px",
+                  display: "flex",
+                  alignItems: "center"
+                }}
+                title={`Create file/folder inside ${node.name}`}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: "12px", height: "12px" }}>
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  showCustomConfirm("Delete Folder", `Are you sure you want to delete folder ${node.name}? This will delete all files inside it.`, () => {
+                    setEditorFilesHtml(prev => {
+                      const updated = { ...prev };
+                      Object.keys(updated).forEach(key => {
+                        if (key === node.path || key.startsWith(node.path + "/")) {
+                          delete updated[key];
+                        }
+                      });
+                      return updated;
+                    });
+                    showToast(`Folder ${node.name} deleted!`);
+                  });
+                }}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: "var(--text-dim)",
+                  cursor: "pointer",
+                  padding: "4px",
+                  display: "flex",
+                  alignItems: "center"
+                }}
+                title={`Delete ${node.name}`}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="#FF5240" strokeWidth="2.5" style={{ width: "11px", height: "11px" }}>
+                  <polyline points="3 6 5 6 21 6" />
+                  <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+                </svg>
+              </button>
+            </div>
+          </div>
+          {!isCollapsed && (
+            <div className="folder-children">
+              {Object.keys(node.children)
+                .sort()
+                .map(key => renderSidebarTree(node.children[key], depth + 1))}
+            </div>
+          )}
+        </div>
+      );
+    } else {
+      const ext = node.name.split('.').pop() || '';
+      let icon = (
+        <span className="text-[9px] font-bold px-1 rounded bg-[#8A919C]/15 text-[#8A919C] border border-[#8A919C]/25" style={{ flexShrink: 0, fontFamily: "var(--mono)" }}>txt</span>
+      );
+      if (['js', 'jsx', 'ts', 'tsx'].includes(ext)) {
+        icon = (
+          <span className="text-[9px] font-bold px-1 rounded bg-[#F7DF1E]/10 text-[#F7DF1E] border border-[#F7DF1E]/20" style={{ flexShrink: 0, fontFamily: "var(--mono)" }}>js</span>
+        );
+      } else if (ext === 'html') {
+        icon = (
+          <span className="text-[9px] font-bold px-1.5 rounded bg-[#E34F26]/10 text-[#E34F26] border border-[#E34F26]/20" style={{ flexShrink: 0, fontFamily: "var(--mono)" }}>html</span>
+        );
+      } else if (ext === 'css') {
+        icon = (
+          <span className="text-[9px] font-bold px-1 rounded bg-[#1572B6]/10 text-[#1572B6] border border-[#1572B6]/20" style={{ flexShrink: 0, fontFamily: "var(--mono)" }}>css</span>
+        );
+      }
+
+      return (
+        <div
+          key={node.path}
+          onClick={() => setActiveFile(node.path)}
+          className={`chat-item ${isFileActive ? "active" : ""}`}
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            cursor: "pointer",
+            paddingLeft: paddingLeft,
+            paddingTop: "4px",
+            paddingBottom: "4px",
+            minHeight: "28px"
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", overflow: "hidden" }}>
+            {icon}
+            <span className="ci-title font-sans text-xs" style={{ textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>
+              {node.name}
+            </span>
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                showCustomPrompt("Rename File", `Rename ${node.name} to:`, node.name, node.name, (newName) => {
+                  if (newName && newName.trim() && newName.trim() !== node.name) {
+                    const trimmed = newName.trim();
+                    const newPath = node.path.substring(0, node.path.lastIndexOf('/') + 1) + trimmed;
+                    setEditorFilesHtml(prev => {
+                      const updated = { ...prev };
+                      updated[newPath] = updated[node.path];
+                      delete updated[node.path];
+                      return updated;
+                    });
+                    if (activeFile === node.path) {
+                      setActiveFile(newPath);
+                    }
+                    showToast(`Renamed to ${trimmed}`);
+                  }
+                });
+              }}
+              style={{
+                background: "transparent",
+                border: "none",
+                color: "var(--text-dim)",
+                cursor: "pointer",
+                padding: "4px",
+                display: "flex",
+                alignItems: "center"
+              }}
+              title={`Rename ${node.name}`}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: "11px", height: "11px" }}>
+                <path d="M12 20h9M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z" />
+              </svg>
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                showCustomConfirm("Delete File", `Are you sure you want to delete ${node.name}?`, () => {
+                  setEditorFilesHtml(prev => {
+                    const updated = { ...prev };
+                    delete updated[node.path];
+                    return updated;
+                  });
+                  if (activeFile === node.path) {
+                    const remaining = Object.keys(editorFilesHtml).filter(f => f !== node.path);
+                    setActiveFile(remaining[0] || "");
+                  }
+                  showToast(`${node.name} deleted!`);
+                });
+              }}
+              style={{
+                background: "transparent",
+                border: "none",
+                color: "var(--text-dim)",
+                cursor: "pointer",
+                padding: "4px",
+                display: "flex",
+                alignItems: "center"
+              }}
+              title={`Delete ${node.name}`}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="#FF5240" strokeWidth="2.5" style={{ width: "11px", height: "11px" }}>
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      );
+    }
+  };
+
+  const getExistingFolders = () => {
+    const folders = new Set();
+    if (editorFilesHtml) {
+      Object.keys(editorFilesHtml).forEach(path => {
+        const parts = path.split('/');
+        if (parts.length > 1) {
+          let currentPath = "";
+          for (let i = 0; i < parts.length - 1; i++) {
+            currentPath = currentPath ? `${currentPath}/${parts[i]}` : parts[i];
+            folders.add(currentPath);
+          }
+        }
+      });
+    }
+    return Array.from(folders).sort();
+  };
+
+  useEffect(() => {
+    if (activeFile && activeFile !== "Preview") {
+      if (activeFile.endsWith('/.keep')) {
+        setSelectedParentFolder(activeFile.slice(0, -6));
+      } else {
+        const parts = activeFile.split('/');
+        if (parts.length > 1) {
+          setSelectedParentFolder(parts.slice(0, -1).join('/'));
+        } else {
+          setSelectedParentFolder("/");
+        }
+      }
+    } else {
+      setSelectedParentFolder("/");
+    }
+  }, [activeFile]);
 
   // Refs for closing menus on click-outside
   const menuRef = useRef(null);
@@ -215,10 +644,132 @@ export default function DashboardClient({ initialProfile }) {
 
   // Streaming/Rendering abort controller ref
   const activeAbortControllerRef = useRef(null);
+  const copilotAbortControllerRef = useRef(null);
+  const [loadingSeconds, setLoadingSeconds] = useState(0);
+
+  useEffect(() => {
+    let interval;
+    if (codeGenerating) {
+      setLoadingSeconds(0);
+      interval = setInterval(() => {
+        setLoadingSeconds(prev => prev + 1);
+      }, 1000);
+    } else {
+      setLoadingSeconds(0);
+    }
+    return () => clearInterval(interval);
+  }, [codeGenerating]);
+
+  const stopCopilotWorkflow = () => {
+    if (copilotAbortControllerRef.current) {
+      copilotAbortControllerRef.current.abort();
+      copilotAbortControllerRef.current = null;
+    }
+    setCopilotStep("idle");
+    setCodeGenerating(false);
+    setCodeGenStatus("Workflow cancelled by user");
+    setCopilotLogs(prev => [...prev, { time: new Date().toLocaleTimeString(), message: "⚠️ Workflow cancelled / reset by user." }]);
+  };
+
+  const handleResetEntireWorkspace = () => {
+    showCustomConfirm(
+      "Reset Entire Workspace", 
+      "Are you sure you want to completely restart Codeinc? This will delete all files in the current project, reset all memory, and clear the Copilot logs.", 
+      () => {
+        if (copilotAbortControllerRef.current) {
+          try { copilotAbortControllerRef.current.abort(); } catch (e) {}
+          copilotAbortControllerRef.current = null;
+        }
+        
+        setEditorFilesHtml({
+          "index.html": ""
+        });
+        
+        setActiveFile("index.html");
+        setCopilotStep("idle");
+        setCopilotLogs([]);
+        setFollowUpQuestion("");
+        setSuggestedDesign("");
+        setFollowUpOptions([]);
+        setCopilotPlan("");
+        setHiddenPrompt("");
+        setCodePrompt("");
+        setCodeGenerating(false);
+        setCodeGenStatus("Awaiting prompt · HTML/CSS/JS");
+        
+        showToast("Codeinc session and files completely reset!");
+      }
+    );
+  };
 
   // Helper to show temporary toast messages
   const showToast = (message) => {
     setToast({ message, visible: true });
+  };
+
+  const showCustomConfirm = (title, message, onConfirm) => {
+    setCustomModal({
+      type: 'confirm',
+      title,
+      message,
+      onConfirm: () => {
+        onConfirm();
+        setCustomModal(null);
+      },
+      onCancel: () => setCustomModal(null)
+    });
+  };
+
+  const showCustomPrompt = (title, message, placeholder, defaultValue, onConfirm) => {
+    setCustomModalInputVal(defaultValue || "");
+    setCustomModal({
+      type: 'prompt',
+      title,
+      message,
+      placeholder,
+      defaultValue,
+      onConfirm: (val) => {
+        onConfirm(val);
+        setCustomModal(null);
+      },
+      onCancel: () => setCustomModal(null)
+    });
+  };
+
+  const handleCreateResource = () => {
+    if (!newResourceName.trim()) {
+      showToast("Please enter a name.");
+      return;
+    }
+
+    let name = newResourceName.trim();
+    
+    // Auto-append extensions if not already present
+    if (newResourceType === "html" && !name.toLowerCase().endsWith(".html")) {
+      name += ".html";
+    } else if (newResourceType === "jsx" && !name.toLowerCase().endsWith(".jsx")) {
+      name += ".jsx";
+    } else if (newResourceType === "js" && !name.toLowerCase().endsWith(".js")) {
+      name += ".js";
+    } else if (newResourceType === "css" && !name.toLowerCase().endsWith(".css")) {
+      name += ".css";
+    }
+
+    const fullPath = selectedParentFolder === "/" ? name : `${selectedParentFolder}/${name}`;
+
+    if (newResourceType === "folder") {
+      const placeholder = fullPath + "/.keep";
+      setEditorFilesHtml(prev => ({ ...prev, [placeholder]: "/* folder placeholder */" }));
+      setActiveFile(placeholder);
+      showToast(`Created folder ${fullPath}`);
+    } else {
+      setEditorFilesHtml(prev => ({ ...prev, [fullPath]: "" }));
+      setActiveFile(fullPath);
+      showToast(`Created file ${fullPath}`);
+    }
+
+    setNewResourceName("");
+    setCreateResourceModalOpen(false);
   };
 
   // Handle parsing of SSE response stream from backend
@@ -1021,6 +1572,8 @@ export default function DashboardClient({ initialProfile }) {
     }
   }, [researchStatus, researchStep]);
 
+
+
   // 2. Private Workspace timeline
   const handlePrivateSend = (e) => {
     e.preventDefault();
@@ -1093,17 +1646,34 @@ export default function DashboardClient({ initialProfile }) {
       }
     } else if (newMode === "visual") {
       // Visual mode has no active Tab in text history, activeTab stays or goes to default
+    } else if (newMode === "nexstudy") {
+      // NexStudy – dedicated study workspace
+      setActiveTab("default");
     }
     setMobileSidebarOpen(false);
   };
 
-  // Code editor file mocks using state for editing / generating
-  // Code editor file mocks using state for editing / generating (HTML, CSS, JS)
   const [editorFilesHtml, setEditorFilesHtml] = useState({
     "index.html": ``,
     "style.css": ``,
     "script.js": ``
   });
+
+  useEffect(() => {
+    if (activeProjectId && editorFilesHtml) {
+      setCodeProjects(prev => {
+        const updated = prev.map(p => {
+          if (p.id === activeProjectId) {
+            return { ...p, files: editorFilesHtml };
+          }
+          return p;
+        });
+        localStorage.setItem("codeinc_projects", JSON.stringify(updated));
+        localStorage.setItem("codeinc_active_project", activeProjectId);
+        return updated;
+      });
+    }
+  }, [editorFilesHtml, activeProjectId]);
 
   const formatCodeForEditor = (code) => {
     if (!code) return "";
@@ -1114,23 +1684,36 @@ export default function DashboardClient({ initialProfile }) {
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;");
       
-      escaped = escaped
-        .replace(/\b(const|let|var|function|return|import|export|if|else|for|while|class|from|document|window)\b/g, '<span class="kw">$1</span>')
-        .replace(/(".*?"|'.*?'|`.*?`)/g, '<span class="str">$1</span>')
-        .replace(/(\/\/.*|\/\*.*\*\/|&lt;!--.*--&gt;)/g, '<span class="com">$1</span>');
+      const tokenRegex = /(\/\/.*|\/\*[\s\S]*?\*\/|&lt;!--[\s\S]*?--&gt;)|("[^"]*"|'[^']*'|`[^`]*`)|(\b(?:const|let|var|function|return|import|export|if|else|for|while|class|from|document|window)\b)/g;
+      escaped = escaped.replace(tokenRegex, (match, comment, string, keyword) => {
+        if (comment) return `<span class="com">${comment}</span>`;
+        if (string) return `<span class="str">${string}</span>`;
+        if (keyword) return `<span class="kw">${keyword}</span>`;
+        return match;
+      });
         
       return `<span class="ln">${idx + 1}</span>${escaped}`;
     }).join("\n");
   };
 
-  const downloadFile = (fileName, content) => {
-    if (!content) return;
+  const cleanSyntaxHighlightedHtml = (content) => {
+    if (!content) return "";
     const cleanHtml = content.replace(/<span class="ln">\d+<\/span>/g, '');
-    const plainText = cleanHtml
+    if (typeof window !== "undefined") {
+      const tempDiv = document.createElement("div");
+      tempDiv.innerHTML = cleanHtml;
+      return tempDiv.textContent || tempDiv.innerText || "";
+    }
+    return cleanHtml
       .replace(/<[^>]*>/g, '')
       .replace(/&lt;/g, '<')
       .replace(/&gt;/g, '>')
       .replace(/&amp;/g, '&');
+  };
+
+  const downloadFile = (fileName, content) => {
+    if (!content) return;
+    const plainText = cleanSyntaxHighlightedHtml(content);
     
     const blob = new Blob([plainText], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -1155,7 +1738,7 @@ export default function DashboardClient({ initialProfile }) {
       
       for (let i = 0; i < Math.min(lines.length, 3); i++) {
         const line = lines[i].trim();
-        const fileMatch = line.match(/(?:<!--|\/\*|\/\/|#)\s*([a-zA-Z0-9._-]+)\s*(?:-->|\*\/)?/);
+        const fileMatch = line.match(/(?:<!--|\/\*|\/\/|#)\s*([a-zA-Z0-9._/:-]+)\s*(?:-->|\*\/)?/);
         if (fileMatch) {
           fileName = fileMatch[1].trim();
           break;
@@ -1170,110 +1753,590 @@ export default function DashboardClient({ initialProfile }) {
         else fileName = `code_${lang || "text"}.txt`;
       }
       
-      files[fileName] = body;
+      if (fileName.endsWith("/")) {
+        fileName = fileName.slice(0, -1) + "/.keep";
+      }
+      
+      const bodyTrimmed = body.trim();
+      const isDelete = bodyTrimmed === "delete" || 
+                       bodyTrimmed.toLowerCase().includes("delete file") || 
+                       bodyTrimmed === "// DELETE" || 
+                       bodyTrimmed === "/* DELETE */" || 
+                       bodyTrimmed === "# DELETE" ||
+                       bodyTrimmed === "<!-- DELETE -->";
+                       
+      let renameTo = null;
+      for (let i = 0; i < Math.min(lines.length, 3); i++) {
+        const line = lines[i].trim();
+        const renameMatch = line.match(/(?:rename to|RENAME TO)\s*([a-zA-Z0-9._/:-]+)/);
+        if (renameMatch) {
+          renameTo = renameMatch[1].trim();
+          break;
+        }
+      }
+      
+      if (isDelete) {
+        files[fileName] = { action: "delete" };
+      } else if (renameTo) {
+        files[fileName] = { action: "rename", to: renameTo, content: body };
+      } else {
+        const fileContent = fileName.endsWith("/.keep") && !body.trim() ? "/* folder placeholder */" : body;
+        files[fileName] = { action: "write", content: fileContent };
+      }
     }
     
     return files;
   };
 
-  const handleGenerateCode = async (e) => {
-    if (e) e.preventDefault();
-    if (!codePrompt.trim()) return;
-    const userPrompt = codePrompt;
-    setCodePrompt("");
-    setCodeGenerating(true);
-    setCodeGenStatus("Connecting to Nvidia NIM stream…");
+  const getPreviewSrcDoc = (fileName = "index.html") => {
+    const extractRawText = cleanSyntaxHighlightedHtml;
 
-    try {
-      const res = await fetch("/api/codeinc/generate", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          prompt: userPrompt,
-          model: nvidiaModel
-        })
-      });
-
-      if (!res.ok) {
-        throw new Error(`Failed to initiate stream: ${res.statusText}`);
+    let htmlContent = extractRawText(editorFilesHtml[fileName]);
+    if (!htmlContent) {
+      if (fileName === "index.html") {
+        return "<html><body><h1>index.html not found</h1></body></html>";
+      } else {
+        return `<html><body><h1>404: ${fileName} not found</h1></body></html>`;
       }
+    }
 
-      setCodeGenStatus("Streaming code blocks…");
+    // 1. Inject Stylesheets inline
+    const linkRegex = /<link\s+[^>]*href=["']([^"']+\.css(?:\?[^"']*)?)["'][^>]*>/gi;
+    htmlContent = htmlContent.replace(linkRegex, (match, href) => {
+      const cssFileName = href.split('?')[0].split('/').pop();
+      const cssContent = extractRawText(editorFilesHtml[cssFileName] || editorFilesHtml[href]);
+      if (cssContent) {
+        return `<style data-inlined-from="${cssFileName}">${cssContent}</style>`;
+      }
+      return match;
+    });
 
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let accumulatedRawText = "";
+    // 2. Inject Javascript scripts inline
+    const scriptRegex = /<script\s+[^>]*src=["']([^"']+\.js(?:\?[^"']*)?)["'][^>]*>\s*<\/script>/gi;
+    htmlContent = htmlContent.replace(scriptRegex, (match, src) => {
+      const jsFileName = src.split('?')[0].split('/').pop();
+      const jsContent = extractRawText(editorFilesHtml[jsFileName] || editorFilesHtml[src]);
+      if (jsContent) {
+        let typeAttr = "";
+        const typeMatch = match.match(/type=["']([^"']+)["']/i);
+        if (typeMatch) {
+          typeAttr = ` type="${typeMatch[1]}"`;
+        }
+        return `<script${typeAttr} data-inlined-from="${jsFileName}">${jsContent}</script>`;
+      }
+      return match;
+    });
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+    // 3. Inject Navigation script to capture relative links click
+    const navigationScript = `
+      <script>
+        document.addEventListener('click', function(e) {
+          const target = e.target.closest('a');
+          if (target && target.getAttribute('href')) {
+            const href = target.getAttribute('href');
+            if (!href.startsWith('http') && !href.startsWith('https') && !href.startsWith('#') && !href.startsWith('javascript:')) {
+              e.preventDefault();
+              const cleanHref = href.split('/').pop();
+              window.parent.postMessage({ type: 'preview-navigate', file: cleanHref }, '*');
+            }
+          }
+        });
+      </script>
+    `;
 
-        const chunkText = decoder.decode(value, { stream: true });
-        
-        // Parse SSE tokens
-        const lines = chunkText.split("\n");
-        for (const line of lines) {
-          if (line.startsWith("data: ")) {
-            const dataStr = line.slice(6).trim();
-            if (dataStr === "[DONE]") continue;
-            try {
-              const parsed = JSON.parse(dataStr);
-              const token = parsed.choices?.[0]?.delta?.content || "";
-              accumulatedRawText += token;
-            } catch (e) {}
+    if (htmlContent.includes("</head>")) {
+      htmlContent = htmlContent.replace("</head>", `${navigationScript}</head>`);
+    } else if (htmlContent.includes("<body>")) {
+      htmlContent = htmlContent.replace("<body>", `<body>${navigationScript}`);
+    } else {
+      htmlContent = navigationScript + htmlContent;
+    }
+
+    return htmlContent;
+  };
+
+  const renderBrowserSimulator = () => {
+    return (
+      <div style={{
+        display: "flex",
+        flexDirection: "column",
+        width: "100%",
+        height: "100%",
+        background: "#1e1e1e",
+        borderRadius: "6px",
+        overflow: "hidden",
+        border: "1px solid var(--border)",
+        boxShadow: "0 10px 30px rgba(0,0,0,0.4)"
+      }}>
+        {/* Browser Toolbar */}
+        <div style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "14px",
+          background: "#2d2d2d",
+          borderBottom: "1px solid #1a1a1a",
+          padding: "8px 16px",
+          userSelect: "none"
+        }}>
+          {/* Window Dots */}
+          <div style={{ display: "flex", gap: "6px" }}>
+            <span style={{ width: "12px", height: "12px", borderRadius: "50%", background: "#FF5F56", display: "inline-block" }}></span>
+            <span style={{ width: "12px", height: "12px", borderRadius: "50%", background: "#FFBD2E", display: "inline-block" }}></span>
+            <span style={{ width: "12px", height: "12px", borderRadius: "50%", background: "#27C93F", display: "inline-block" }}></span>
+          </div>
+          
+          {/* Navigation Controls */}
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <button
+              onClick={handlePreviewBack}
+              disabled={previewHistoryIndex === 0}
+              style={{
+                background: "transparent",
+                border: "none",
+                color: previewHistoryIndex === 0 ? "#555" : "#ccc",
+                cursor: previewHistoryIndex === 0 ? "default" : "pointer",
+                display: "flex",
+                alignItems: "center"
+              }}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: "14px", height: "14px" }}>
+                <line x1="19" y1="12" x2="5" y2="12" />
+                <polyline points="12 19 5 12 12 5" />
+              </svg>
+            </button>
+            <button
+              onClick={handlePreviewForward}
+              disabled={previewHistoryIndex === previewHistory.length - 1}
+              style={{
+                background: "transparent",
+                border: "none",
+                color: previewHistoryIndex === previewHistory.length - 1 ? "#555" : "#ccc",
+                cursor: previewHistoryIndex === previewHistory.length - 1 ? "default" : "pointer",
+                display: "flex",
+                alignItems: "center"
+              }}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: "14px", height: "14px" }}>
+                <line x1="5" y1="12" x2="19" y2="12" />
+                <polyline points="12 5 19 12 12 19" />
+              </svg>
+            </button>
+            <button
+              onClick={() => setPreviewRefreshKey(p => p + 1)}
+              style={{
+                background: "transparent",
+                border: "none",
+                color: "#ccc",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center"
+              }}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: "14px", height: "14px" }}>
+                <path d="M23 4v6h-6M1 20v-6h6" />
+                <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" />
+              </svg>
+            </button>
+          </div>
+
+          {/* Address Bar */}
+          <div style={{
+            flex: 1,
+            background: "#1e1e1e",
+            border: "1px solid #3c3c3c",
+            borderRadius: "4px",
+            color: "#8e8e8e",
+            padding: "4px 12px",
+            fontSize: "11px",
+            fontFamily: "var(--mono)",
+            display: "flex",
+            alignItems: "center",
+            gap: "6px"
+          }}>
+            <span style={{ color: "#555" }}>http://</span>
+            <span style={{ color: "#ccc" }}>localhost:3000/{currentPreviewFile}</span>
+          </div>
+
+          {/* Window Action Controls */}
+          <div style={{ display: "flex", gap: "10px" }}>
+            <button
+              onClick={() => setPreviewFullscreen(!previewFullscreen)}
+              style={{
+                background: previewFullscreen ? "#FFB236" : "#3c3c3c",
+                border: "none",
+                color: previewFullscreen ? "black" : "#ccc",
+                padding: "4px 8px",
+                fontSize: "10.5px",
+                borderRadius: "3px",
+                cursor: "pointer",
+                fontWeight: "bold",
+                fontFamily: "var(--sans)"
+              }}
+            >
+              {previewFullscreen ? "Exit Fullscreen" : "Fullscreen"}
+            </button>
+            <button
+              onClick={() => setActiveFile(Object.keys(editorFilesHtml)[0] || "")}
+              style={{
+                background: "#3c3c3c",
+                border: "none",
+                color: "#ccc",
+                padding: "4px 8px",
+                fontSize: "10.5px",
+                borderRadius: "3px",
+                cursor: "pointer",
+                fontWeight: "bold",
+                fontFamily: "var(--sans)"
+              }}
+            >
+              Exit Preview
+            </button>
+          </div>
+        </div>
+
+        {/* Browser Content */}
+        <div style={{ flex: 1, background: "#ffffff", position: "relative" }}>
+          <iframe
+            key={previewRefreshKey}
+            srcDoc={getPreviewSrcDoc(currentPreviewFile)}
+            style={{
+              width: "100%",
+              height: "100%",
+              border: "none",
+              background: "#ffffff"
+            }}
+            sandbox="allow-scripts"
+            title="Web Preview"
+          />
+        </div>
+      </div>
+    );
+  };
+
+  const getFilesContext = () => {
+    return Object.keys(editorFilesHtml)
+      .filter(f => f !== "Preview" && f !== "Reasoning" && editorFilesHtml[f])
+      .map(f => {
+        const cleanContent = cleanSyntaxHighlightedHtml(editorFilesHtml[f]);
+        return `File: ${f}\n\`\`\`\n${cleanContent}\n\`\`\``;
+      })
+      .join("\n\n");
+  };
+
+  const readSSEStream = async (actionName, requestBody, onMessage) => {
+    if (copilotAbortControllerRef.current) {
+      try { copilotAbortControllerRef.current.abort(); } catch (e) {}
+    }
+    copilotAbortControllerRef.current = new AbortController();
+
+    const res = await fetch("/api/codeinc/generate", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        ...requestBody,
+        model: nvidiaModel,
+        managerModel: managerModel
+      }),
+      signal: copilotAbortControllerRef.current.signal
+    });
+
+    if (!res.ok) {
+      throw new Error(`Request failed: ${res.statusText}`);
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let accumulatedText = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      accumulatedText += decoder.decode(value, { stream: true });
+      const lines = accumulatedText.split("\n");
+      accumulatedText = lines.pop() || "";
+
+      for (const line of lines) {
+        if (line.startsWith("data: ")) {
+          const dataStr = line.slice(6).trim();
+          if (!dataStr) continue;
+          try {
+            const parsed = JSON.parse(dataStr);
+            onMessage(parsed);
+          } catch (e) {
+            console.error("SSE parse error", e, dataStr);
           }
         }
-
-        // Live parse all generated files and merge with previous files
-        const parsedFiles = parseWorkspaceFiles(accumulatedRawText);
-        setEditorFilesHtml(prev => {
-          const updated = { ...prev };
-          Object.keys(parsedFiles).forEach(fileName => {
-            updated[fileName] = formatCodeForEditor(parsedFiles[fileName]) + '<span class="gen-cursor"></span>';
-          });
-          return updated;
-        });
       }
+    }
+  };
+
+  const startCopilotInitial = async (customPrompt) => {
+    const promptToUse = customPrompt || codePrompt;
+    if (!promptToUse.trim()) return;
+    
+    setCodePrompt("");
+    setCopilotStep("analyzing");
+    setCodeGenerating(true);
+    setCodeGenStatus("Analyzing workspace...");
+    setCopilotLogs([{ time: new Date().toLocaleTimeString(), message: "Starting Agentic Workspace Planner..." }]);
+    setFollowUpQuestion("");
+    setFollowUpOptions([]);
+    setSuggestedDesign("");
+    setCopilotPlan("");
+    setHiddenPrompt("");
+    setQaCritiqueLog("");
+
+    const filesContext = getFilesContext();
+
+    try {
+      await readSSEStream("initial", {
+        action: "initial",
+        prompt: promptToUse,
+        filesContext
+      }, (parsed) => {
+        if (parsed.status === "log") {
+          setCopilotLogs(prev => [...prev, { time: new Date().toLocaleTimeString(), message: parsed.message }]);
+          setCodeGenStatus(parsed.message);
+        } else if (parsed.status === "options") {
+          setFollowUpQuestion(parsed.followUp || "");
+          setFollowUpOptions(parsed.options || []);
+          setSuggestedDesign(parsed.designSystem || "");
+          setCopilotStep("options_ready");
+          setCodeGenStatus("Select choice or enter reply...");
+        } else if (parsed.status === "error") {
+          throw new Error(parsed.message);
+        }
+      });
+    } catch (err) {
+      console.error(err);
+      setCopilotStep("error");
+      setCodeGenStatus("Error: " + err.message);
+      setCopilotLogs(prev => [...prev, { time: new Date().toLocaleTimeString(), message: "Error: " + err.message, error: true }]);
+      setCodeGenerating(false);
+    }
+  };
+
+  const submitCopilotOption = async (optionText) => {
+    setSelectedOption(optionText);
+    setCopilotStep("planning");
+    setCodeGenStatus("Generating implementation plan...");
+    setCopilotLogs(prev => [...prev, { time: new Date().toLocaleTimeString(), message: `Selected Option: "${optionText}"` }]);
+    setCopilotPlan("");
+
+    const filesContext = getFilesContext();
+
+    try {
+      let accumulatedPlan = "";
+      await readSSEStream("plan", {
+        action: "plan",
+        prompt: codePrompt || selectedOption,
+        selectedOption: optionText,
+        filesContext
+      }, (parsed) => {
+        if (parsed.status === "log") {
+          setCopilotLogs(prev => [...prev, { time: new Date().toLocaleTimeString(), message: parsed.message }]);
+          setCodeGenStatus(parsed.message);
+        } else if (parsed.status === "plan_chunk") {
+          accumulatedPlan += parsed.token || "";
+          setCopilotPlan(accumulatedPlan);
+        } else if (parsed.status === "plan_ready") {
+          let cleanPlan = parsed.plan || "";
+          const splitIdx = cleanPlan.indexOf("[CODING_INSTRUCTIONS]");
+          if (splitIdx !== -1) {
+            cleanPlan = cleanPlan.slice(0, splitIdx).trim();
+          }
+          setCopilotPlan(cleanPlan);
+          setHiddenPrompt(parsed.hiddenPrompt || "");
+          setCopilotStep("plan_ready");
+          setCodeGenStatus("Review plan and click Approve...");
+        } else if (parsed.status === "error") {
+          throw new Error(parsed.message);
+        }
+      });
+    } catch (err) {
+      console.error(err);
+      setCopilotStep("error");
+      setCodeGenStatus("Error: " + err.message);
+      setCopilotLogs(prev => [...prev, { time: new Date().toLocaleTimeString(), message: "Error: " + err.message, error: true }]);
+      setCodeGenerating(false);
+    }
+  };
+
+  const approveAndGenerateCode = async () => {
+    setCopilotStep("coding");
+    setCodeGenStatus("Generating code files...");
+    setCopilotLogs(prev => [...prev, { time: new Date().toLocaleTimeString(), message: "Plan approved. Coding model executing changes..." }]);
+
+    const filesContext = getFilesContext();
+    let accumulatedRawText = "";
+
+    try {
+      await readSSEStream("code", {
+        action: "code",
+        prompt: codePrompt,
+        plan: copilotPlan,
+        hiddenPrompt,
+        filesContext
+      }, (parsed) => {
+        if (parsed.status === "log") {
+          setCopilotLogs(prev => [...prev, { time: new Date().toLocaleTimeString(), message: parsed.message }]);
+          setCodeGenStatus(parsed.message);
+        } else if (parsed.status === "code_chunk") {
+          const token = parsed.token || "";
+          accumulatedRawText += token;
+          
+          const parsedFiles = parseWorkspaceFiles(accumulatedRawText);
+          setEditorFilesHtml(prev => {
+            const updated = { ...prev };
+            Object.keys(parsedFiles).forEach(fileName => {
+              const fileInfo = parsedFiles[fileName];
+              if (fileInfo.action === "delete") {
+                delete updated[fileName];
+              } else if (fileInfo.action === "rename") {
+                delete updated[fileName];
+                updated[fileInfo.to] = formatCodeForEditor(fileInfo.content) + '<span class="gen-cursor"></span>';
+              } else {
+                updated[fileName] = formatCodeForEditor(fileInfo.content) + '<span class="gen-cursor"></span>';
+              }
+            });
+            return updated;
+          });
+        } else if (parsed.status === "error") {
+          throw new Error(parsed.message);
+        }
+      });
 
       // Clean cursors
       const finalFiles = parseWorkspaceFiles(accumulatedRawText);
       setEditorFilesHtml(prev => {
         const updated = { ...prev };
         Object.keys(finalFiles).forEach(fileName => {
-          updated[fileName] = formatCodeForEditor(finalFiles[fileName]);
+          const fileInfo = finalFiles[fileName];
+          if (fileInfo.action === "delete") {
+            delete updated[fileName];
+          } else if (fileInfo.action === "rename") {
+            delete updated[fileName];
+            updated[fileInfo.to] = formatCodeForEditor(fileInfo.content);
+          } else {
+            updated[fileName] = formatCodeForEditor(fileInfo.content);
+          }
         });
         return updated;
       });
 
-      // Auto-select the first generated file if there are any
-      const generatedKeys = Object.keys(finalFiles);
+      // Auto-select first file
+      const generatedKeys = Object.keys(finalFiles).filter(k => finalFiles[k].action !== "delete");
       if (generatedKeys.length > 0) {
         setActiveFile(generatedKeys[0]);
       }
 
-      setCodeGenerating(false);
-      setCodeGenStatus("Success · Projects updated");
-      showToast("Workspace code updated and new files extracted!");
+      await runCopilotQA(accumulatedRawText);
 
     } catch (err) {
       console.error(err);
-      setCodeGenStatus("Streaming failed");
+      setCopilotStep("error");
+      setCodeGenStatus("Error: " + err.message);
+      setCopilotLogs(prev => [...prev, { time: new Date().toLocaleTimeString(), message: "Error: " + err.message, error: true }]);
       setCodeGenerating(false);
-      showToast("Streaming error: " + err.message);
     }
   };
 
-  // Helper to copy code (strip HTML tags and line numbers)
+  const runCopilotQA = async (originalCode) => {
+    setCopilotStep("qa");
+    setCodeGenStatus("QA Reviewing and checking for design errors...");
+    setCopilotLogs(prev => [...prev, { time: new Date().toLocaleTimeString(), message: "Starting Quality Assurance validation loop..." }]);
+    setQaCritiqueLog("");
+
+    const filesContext = getFilesContext();
+    let accumulatedQaLog = "";
+    let accumulatedRawText = originalCode || "";
+
+    try {
+      await readSSEStream("qa", {
+        action: "qa",
+        prompt: codePrompt,
+        plan: copilotPlan,
+        generatedFiles: filesContext
+      }, (parsed) => {
+        if (parsed.status === "log") {
+          setCopilotLogs(prev => [...prev, { time: new Date().toLocaleTimeString(), message: parsed.message }]);
+          setCodeGenStatus(parsed.message);
+        } else if (parsed.status === "qa_chunk") {
+          accumulatedQaLog += parsed.token || "";
+          setQaCritiqueLog(accumulatedQaLog);
+        } else if (parsed.status === "code_chunk") {
+          const token = parsed.token || "";
+          accumulatedRawText += token;
+          
+          const parsedFiles = parseWorkspaceFiles(accumulatedRawText);
+          setEditorFilesHtml(prev => {
+            const updated = { ...prev };
+            Object.keys(parsedFiles).forEach(fileName => {
+              const fileInfo = parsedFiles[fileName];
+              if (fileInfo.action === "delete") {
+                delete updated[fileName];
+              } else if (fileInfo.action === "rename") {
+                delete updated[fileName];
+                updated[fileInfo.to] = formatCodeForEditor(fileInfo.content) + '<span class="gen-cursor"></span>';
+              } else {
+                updated[fileName] = formatCodeForEditor(fileInfo.content) + '<span class="gen-cursor"></span>';
+              }
+            });
+            return updated;
+          });
+        } else if (parsed.status === "complete") {
+          setCopilotStep("finished");
+          setCodeGenStatus("Success · Workspace verified");
+          setCodeGenerating(false);
+          showToast("Workspace checked, refined, and verified by QA!");
+        } else if (parsed.status === "error") {
+          throw new Error(parsed.message);
+        }
+      });
+
+      // Clean cursors
+      const finalFiles = parseWorkspaceFiles(accumulatedRawText);
+      setEditorFilesHtml(prev => {
+        const updated = { ...prev };
+        Object.keys(finalFiles).forEach(fileName => {
+          const fileInfo = finalFiles[fileName];
+          if (fileInfo.action === "delete") {
+            delete updated[fileName];
+          } else if (fileInfo.action === "rename") {
+            delete updated[fileName];
+            updated[fileInfo.to] = formatCodeForEditor(fileInfo.content);
+          } else {
+            updated[fileName] = formatCodeForEditor(fileInfo.content);
+          }
+        });
+        return updated;
+      });
+
+    } catch (err) {
+      console.error(err);
+      setCopilotStep("error");
+      setCodeGenStatus("Error: " + err.message);
+      setCopilotLogs(prev => [...prev, { time: new Date().toLocaleTimeString(), message: "QA Error: " + err.message, error: true }]);
+      setCodeGenerating(false);
+    }
+  };
+
+  const handleGenerateCode = async (e) => {
+    if (e) e.preventDefault();
+    if (!codePrompt.trim()) return;
+    await startCopilotInitial();
+  };
+
   const handleCopyCode = () => {
+    if (!activeFile || activeFile === "Preview") {
+      showToast("No active file to copy.");
+      return;
+    }
     const rawHtml = editorFilesHtml[activeFile] || "";
-    const cleanHtml = rawHtml.replace(/<span class="ln">\d+<\/span>/g, '');
-    const plainText = cleanHtml
-      .replace(/<[^>]*>/g, '')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&amp;/g, '&');
+    const plainText = cleanSyntaxHighlightedHtml(rawHtml);
     
     navigator.clipboard?.writeText(plainText).catch(() => {});
     showToast("Code copied to clipboard!");
@@ -1669,7 +2732,7 @@ export default function DashboardClient({ initialProfile }) {
               data-mode="text"
             >
               <span className="mode-idx">01</span>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
               </svg>
               Text
@@ -1680,7 +2743,7 @@ export default function DashboardClient({ initialProfile }) {
               data-mode="visual"
             >
               <span className="mode-idx">02</span>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <rect x="3" y="3" width="18" height="18" rx="2" />
                 <circle cx="8.5" cy="8.5" r="1.5" />
                 <polyline points="21 15 16 10 5 21" />
@@ -1693,11 +2756,24 @@ export default function DashboardClient({ initialProfile }) {
               data-mode="codeinc"
             >
               <span className="mode-idx">03</span>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <polyline points="16 18 22 12 16 6" />
                 <polyline points="8 6 2 12 8 18" />
               </svg>
               Codeinc
+            </button>
+            <button
+              className={`mode-btn ${mode === "nexstudy" ? "active" : ""}`}
+              onClick={() => handleModeChange("nexstudy")}
+              data-mode="nexstudy"
+            >
+              <span className="mode-idx">04</span>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                <path d="M2 17l10 5 10-5" />
+                <path d="M2 12l10 5 10-5" />
+              </svg>
+              NexStudy
             </button>
           </div>
 
@@ -1705,7 +2781,7 @@ export default function DashboardClient({ initialProfile }) {
             <button onClick={() => setIsModelModalOpen(true)} className="model-trigger">
               <div className="model-dot"></div>
               <span id="modelLabel">{currentModel?.label || "Gemini 2.5 Pro"}</span>
-              <svg className="expand" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <svg className="expand" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                 <path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3" />
               </svg>
             </button>
@@ -1734,7 +2810,7 @@ export default function DashboardClient({ initialProfile }) {
                 New Chat
               </button>
               <div className="search-wrap">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <circle cx="11" cy="11" r="7" />
                   <line x1="21" y1="21" x2="16.65" y2="16.65" />
                 </svg>
@@ -1763,7 +2839,7 @@ export default function DashboardClient({ initialProfile }) {
                   <div className="tile-name">RESEARCH</div>
                   <div className="tile-sub">Live sources & citations</div>
                 </div>
-                <svg className="tile-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <svg className="tile-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                   <polyline points="9 18 15 12 9 6" />
                 </svg>
               </div>
@@ -1782,7 +2858,7 @@ export default function DashboardClient({ initialProfile }) {
                   <div className="tile-name">PRIVATE</div>
                   <div className="tile-sub">Encrypted, no training</div>
                 </div>
-                <svg className="tile-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <svg className="tile-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                   <polyline points="9 18 15 12 9 6" />
                 </svg>
               </div>
@@ -1832,14 +2908,14 @@ export default function DashboardClient({ initialProfile }) {
                 }}
                 className="new-chat-btn new-chat-visual"
               >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                   <line x1="12" y1="5" x2="12" y2="19" />
                   <line x1="5" y1="12" x2="19" y2="12" />
                 </svg>
                 New generation
               </button>
               <div className="search-wrap">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <circle cx="11" cy="11" r="7" />
                   <line x1="21" y1="21" x2="16.65" y2="16.65" />
                 </svg>
@@ -1859,7 +2935,7 @@ export default function DashboardClient({ initialProfile }) {
                 className={`section-tile tile-visual-mode ${visualType === "image" ? "active" : ""}`}
               >
                 <div className="tile-icon">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <rect x="3" y="3" width="18" height="18" rx="2" />
                     <circle cx="8.5" cy="8.5" r="1.5" />
                     <polyline points="21 15 16 10 5 21" />
@@ -1869,7 +2945,7 @@ export default function DashboardClient({ initialProfile }) {
                   <div className="tile-name">IMAGE</div>
                   <div className="tile-sub">Stills, art, product shots</div>
                 </div>
-                <svg className="tile-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <svg className="tile-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                   <polyline points="9 18 15 12 9 6" />
                 </svg>
               </div>
@@ -1879,7 +2955,7 @@ export default function DashboardClient({ initialProfile }) {
                 className={`section-tile tile-visual-mode ${visualType === "video" ? "active" : ""}`}
               >
                 <div className="tile-icon">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <polygon points="23 7 16 12 23 17 23 7" />
                     <rect x="1" y="5" width="15" height="14" rx="2" />
                   </svg>
@@ -1888,7 +2964,7 @@ export default function DashboardClient({ initialProfile }) {
                   <div className="tile-name">VIDEO</div>
                   <div className="tile-sub">Clips & motion sequences</div>
                 </div>
-                <svg className="tile-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <svg className="tile-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                   <polyline points="9 18 15 12 9 6" />
                 </svg>
               </div>
@@ -1913,7 +2989,7 @@ export default function DashboardClient({ initialProfile }) {
                     }}
                     className="chat-item"
                   >
-                    <svg className="ci-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <svg className="ci-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       {item.isVideo ? (
                         <>
                           <polygon points="23 7 16 12 23 17 23 7" />
@@ -1945,26 +3021,87 @@ export default function DashboardClient({ initialProfile }) {
 
           {/* ===== CODEINC SIDEBAR PANEL ===== */}
           <div className={`sidebar-panel ${mode === "codeinc" ? "active" : ""}`} id="sidebarCodeinc">
-            <div className="sidebar-top">
-              <button
-                onClick={() => {
-                  setEditorFilesHtml({
-                    "index.html": ``,
-                    "style.css": ``,
-                    "script.js": ``
-                  });
-                  setActiveFile("index.html");
-                }}
-                className="new-chat-btn new-chat-code"
-              >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                  <line x1="12" y1="5" x2="12" y2="19" />
-                  <line x1="5" y1="12" x2="19" y2="12" />
-                </svg>
-                Reset Files
-              </button>
-              <div className="search-wrap">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <div className="sidebar-top" style={{ display: "flex", flexDirection: "column", gap: "8px", paddingBottom: "10px" }}>
+              <div style={{ display: "flex", gap: "6px", width: "100%" }}>
+                <button
+                  onClick={() => {
+                    showCustomPrompt(
+                      "New Project",
+                      "Enter the name of your new project:",
+                      "my-web-project",
+                      "",
+                      (projectName) => {
+                        if (projectName && projectName.trim()) {
+                          const trimmed = projectName.trim();
+                          const newProj = {
+                            id: "project-" + Date.now(),
+                            name: trimmed,
+                            files: {}
+                          };
+                          setCodeProjects(prev => [newProj, ...prev]);
+                          setActiveProjectId(newProj.id);
+                          setEditorFilesHtml(newProj.files);
+                          setActiveFile("");
+                          showToast(`Created project ${trimmed}`);
+                        }
+                      }
+                    );
+                  }}
+                  className="new-chat-btn new-chat-code"
+                  style={{ flex: 1, padding: "6px 8px", fontSize: "11.5px", fontWeight: "600", border: "1px solid var(--code-accent)" }}
+                >
+                  New Project +
+                </button>
+              </div>
+              <div style={{ display: "flex", gap: "6px", width: "100%" }}>
+                <button
+                  onClick={() => {
+                    setNewResourceType("html");
+                    setNewResourceName("");
+                    setCreateResourceModalOpen(true);
+                  }}
+                  className="new-chat-btn new-chat-code"
+                  style={{ flex: 1, padding: "6px 8px", fontSize: "10.5px" }}
+                >
+                  New File
+                </button>
+                <button
+                  onClick={() => {
+                    setNewResourceType("folder");
+                    setNewResourceName("");
+                    setCreateResourceModalOpen(true);
+                  }}
+                  className="new-chat-btn new-chat-code"
+                  style={{ flex: 1, padding: "6px 8px", fontSize: "10.5px" }}
+                >
+                  New Folder
+                </button>
+              </div>
+              <div style={{ display: "flex", gap: "6px", width: "100%" }}>
+                <button
+                  onClick={() => {
+                    showCustomConfirm(
+                      "Reset Files",
+                      "Are you sure you want to reset all project files to default? This will clear all custom files and changes.",
+                      () => {
+                        setEditorFilesHtml({
+                          "index.html": ``,
+                          "style.css": ``,
+                          "script.js": ``
+                        });
+                        setActiveFile("index.html");
+                        showToast("Files reset");
+                      }
+                    );
+                  }}
+                  className="new-chat-btn new-chat-code"
+                  style={{ flex: 1, padding: "6px 8px", fontSize: "10.5px", opacity: 0.7 }}
+                >
+                  Reset Current Files
+                </button>
+              </div>
+              <div className="search-wrap" style={{ width: "100%" }}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <circle cx="11" cy="11" r="7" />
                   <line x1="21" y1="21" x2="16.65" y2="16.65" />
                 </svg>
@@ -1978,31 +3115,107 @@ export default function DashboardClient({ initialProfile }) {
             </div>
 
             <div className="sidebar-scroll">
-              <div className="section-label">Workspace</div>
-              {Object.keys(editorFilesHtml)
-                .filter(fileName => fileName.toLowerCase().includes(searchQuery.toLowerCase()))
-                .map(fileName => (
-                  <div
-                    key={fileName}
-                    onClick={() => setActiveFile(fileName)}
-                    className={`chat-item ${activeFile === fileName ? "active" : ""}`}
-                  >
-                    <svg className="ci-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
-                      <path d="M14 2v6h6" />
-                    </svg>
-                    <span className="ci-title">{fileName}</span>
-                  </div>
-                ))}
+              <div className="section-label" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%" }}>
+                <span>PROJECT FILES</span>
+                <button
+                  onClick={() => {
+                    setNewResourceType("html");
+                    setNewResourceName("");
+                    setCreateResourceModalOpen(true);
+                  }}
+                  className="flex items-center justify-center border border-[#262B33] bg-[#0B0D10] text-[#5EE0A8] hover:bg-[#5EE0A8] hover:text-[#0B0D10] transition-colors"
+                  style={{
+                    width: "18px",
+                    height: "18px",
+                    borderRadius: "3px",
+                    fontSize: "12px",
+                    fontWeight: "bold",
+                    lineHeight: "1",
+                    cursor: "pointer"
+                  }}
+                  title="Create New File/Folder"
+                >
+                  +
+                </button>
+              </div>
+              <div className="file-tree-container mt-1">
+                {Object.keys(editorFilesHtml).length === 0 ? (
+                  <div className="text-brand-subtext text-xs p-3 italic">No files in project yet.</div>
+                ) : (
+                  renderSidebarTree(buildFileTree(editorFilesHtml))
+                )}
+              </div>
               
               <div className="section-label">Recent projects</div>
-              <div className="chat-item">
-                <svg className="ci-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <polyline points="16 18 22 12 16 6" />
-                  <polyline points="8 6 2 12 8 18" />
-                </svg>
-                <span className="ci-title">web-project</span>
-              </div>
+              {codeProjects.map(proj => (
+                <div
+                  key={proj.id}
+                  onClick={() => {
+                    setActiveProjectId(proj.id);
+                    setEditorFilesHtml(proj.files);
+                    const files = Object.keys(proj.files);
+                    setActiveFile(files[0] || "");
+                    showToast(`Opened project ${proj.name}`);
+                  }}
+                  className={`chat-item ${activeProjectId === proj.id ? "active" : ""}`}
+                  style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", overflow: "hidden" }}>
+                    <svg className="ci-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flexShrink: 0 }}>
+                      <polyline points="16 18 22 12 16 6" />
+                      <polyline points="8 6 2 12 8 18" />
+                    </svg>
+                    <span className="ci-title" style={{ textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>{proj.name}</span>
+                  </div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      showCustomConfirm("Delete Project", `Are you sure you want to delete project ${proj.name}? All project files will be deleted permanently.`, () => {
+                        const remaining = codeProjects.filter(p => p.id !== proj.id);
+                        if (remaining.length === 0) {
+                          const defaultProj = {
+                            id: "proj_" + Date.now(),
+                            name: "Project 1",
+                            files: {}
+                          };
+                          const newProjectsList = [defaultProj];
+                          setCodeProjects(newProjectsList);
+                          localStorage.setItem("codeinc_projects", JSON.stringify(newProjectsList));
+                          setActiveProjectId(defaultProj.id);
+                          setEditorFilesHtml({});
+                          setActiveFile("");
+                        } else {
+                          setCodeProjects(remaining);
+                          localStorage.setItem("codeinc_projects", JSON.stringify(remaining));
+                          if (activeProjectId === proj.id) {
+                            const newActive = remaining[0];
+                            setActiveProjectId(newActive.id);
+                            setEditorFilesHtml(newActive.files);
+                            const files = Object.keys(newActive.files);
+                            setActiveFile(files[0] || "");
+                          }
+                        }
+                        showToast(`Project ${proj.name} deleted!`);
+                      });
+                    }}
+                    style={{
+                      background: "transparent",
+                      border: "none",
+                      color: "var(--text-dim)",
+                      cursor: "pointer",
+                      padding: "4px",
+                      display: "flex",
+                      alignItems: "center"
+                    }}
+                    title={`Delete project ${proj.name}`}
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="#FF5240" strokeWidth="2.5" style={{ width: "11px", height: "11px" }}>
+                      <polyline points="3 6 5 6 21 6" />
+                      <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+                    </svg>
+                  </button>
+                </div>
+              ))}
             </div>
 
             <div className="sidebar-bottom">
@@ -2438,7 +3651,21 @@ export default function DashboardClient({ initialProfile }) {
           </div>
 
           {/* ===== CODEINC WORKSPACE ===== */}
-          <div className={`view ${mode === "codeinc" ? "active" : ""}`} id="viewCode">
+          <div className={`view ${mode === "codeinc" ? "active" : ""}`} id="viewCode" style={{ position: "relative" }}>
+            {previewFullscreen && activeFile === "Preview" && (
+              <div style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                zIndex: 9999,
+                background: "var(--background)",
+                padding: "16px"
+              }}>
+                {renderBrowserSimulator()}
+              </div>
+            )}
             <div className="ws-header">
               <div className="ws-header-left">
                 <div className="ws-icon-big">
@@ -2452,38 +3679,110 @@ export default function DashboardClient({ initialProfile }) {
                   <div className="ws-subtitle">Generates code from a prompt using the coding model</div>
                 </div>
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                <select
-                  value={nvidiaModel}
-                  onChange={(e) => setNvidiaModel(e.target.value)}
+              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                  <label style={{ fontSize: "8.5px", color: "var(--text-dim)", textTransform: "uppercase", fontWeight: "bold", fontFamily: "var(--mono)" }}>Coding Model</label>
+                  <select
+                    value={nvidiaModel}
+                    onChange={(e) => setNvidiaModel(e.target.value)}
+                    style={{
+                      background: "var(--panel-2)",
+                      border: "1px solid var(--border)",
+                      color: "var(--text)",
+                      padding: "5px 10px",
+                      fontFamily: "var(--mono)",
+                      fontSize: "11.5px",
+                      outline: "none",
+                      cursor: "pointer",
+                      borderRadius: "3px",
+                      maxWidth: "200px"
+                    }}
+                  >
+                    <optgroup label="NVIDIA Models" style={{ background: "var(--panel-2)", color: "var(--text-dim)" }}>
+                      <option value="meta/llama-3.3-70b-instruct" style={{ color: "var(--text)" }}>meta/llama-3.3-70b-instruct</option>
+                      <option value="meta/llama-3.1-70b-instruct" style={{ color: "var(--text)" }}>meta/llama-3.1-70b-instruct</option>
+                      <option value="meta/llama-3.1-8b-instruct" style={{ color: "var(--text)" }}>meta/llama-3.1-8b-instruct</option>
+                      <option value="meta/llama-3.2-3b-instruct" style={{ color: "var(--text)" }}>meta/llama-3.2-3b-instruct</option>
+                      <option value="meta/llama-3.2-1b-instruct" style={{ color: "var(--text)" }}>meta/llama-3.2-1b-instruct</option>
+                      <option value="microsoft/phi-4-mini-instruct" style={{ color: "var(--text)" }}>microsoft/phi-4-mini-instruct</option>
+                      <option value="google/gemma-2-2b-it" style={{ color: "var(--text)" }}>google/gemma-2-2b-it</option>
+                      <option value="mistralai/mixtral-8x7b-instruct-v0.1" style={{ color: "var(--text)" }}>mistralai/mixtral-8x7b-instruct-v0.1</option>
+                    </optgroup>
+                    <optgroup label="Xiaomi MiMo" style={{ background: "var(--panel-2)", color: "var(--text-dim)" }}>
+                      <option value="mimo/mimo-v2.5-pro" style={{ color: "var(--text)" }}>mimo-v2.5-pro</option>
+                      <option value="mimo/mimo-v2.5-pro-ultraspeed" style={{ color: "var(--text)" }}>mimo-v2.5-pro-ultraspeed</option>
+                    </optgroup>
+                    <optgroup label="Sakana AI (Fugu)" style={{ background: "var(--panel-2)", color: "var(--text-dim)" }}>
+                      <option value="sakana/fugu" style={{ color: "var(--text)" }}>sakana/fugu</option>
+                      <option value="sakana/fugu-ultra" style={{ color: "var(--text)" }}>sakana/fugu-ultra</option>
+                    </optgroup>
+                  </select>
+                </div>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                  <label style={{ fontSize: "8.5px", color: "var(--text-dim)", textTransform: "uppercase", fontWeight: "bold", fontFamily: "var(--mono)" }}>Manager & QA Model</label>
+                  <select
+                    value={managerModel}
+                    onChange={(e) => setManagerModel(e.target.value)}
+                    style={{
+                      background: "var(--panel-2)",
+                      border: "1px solid var(--border)",
+                      color: "var(--text)",
+                      padding: "5px 10px",
+                      fontFamily: "var(--mono)",
+                      fontSize: "11.5px",
+                      outline: "none",
+                      cursor: "pointer",
+                      borderRadius: "3px",
+                      maxWidth: "200px"
+                    }}
+                  >
+                    <option value="groq/llama-3.3-70b-versatile" style={{ color: "var(--text)" }}>Llama 3.3 70B (Groq - Free)</option>
+                    <option value="groq/gemma2-9b-it" style={{ color: "var(--text)" }}>Gemma 2 9B (Groq - Free)</option>
+                    <option value="openrouter/openai/gpt-oss-120b:free" style={{ color: "var(--text)" }}>GPT OSS 120B (OpenRouter - Free)</option>
+                    <option value="openrouter/openai/gpt-oss-20b:free" style={{ color: "var(--text)" }}>GPT OSS 20B (OpenRouter - Free)</option>
+                    <option value="openrouter/nousresearch/hermes-3-llama-3.1-405b:free" style={{ color: "var(--text)" }}>Hermes 3 405B (OpenRouter - Free)</option>
+                    <option value="openrouter/google/gemma-4-31b:free" style={{ color: "var(--text)" }}>Gemma 4 31B (OpenRouter - Free)</option>
+                    <option value="openrouter/google/gemma-4-26b:free" style={{ color: "var(--text)" }}>Gemma 4 26B (OpenRouter - Free)</option>
+                    <option value="openrouter/qwen/qwen3-next-80b-a3b:free" style={{ color: "var(--text)" }}>Qwen3 Next 80B (OpenRouter - Free)</option>
+                    <option value="openrouter/qwen/qwen3-coder-480b-a3b:free" style={{ color: "var(--text)" }}>Qwen3 Coder 480B (OpenRouter - Free)</option>
+                    <option value="openrouter/poolside/laguna-m.1:free" style={{ color: "var(--text)" }}>Laguna M.1 (OpenRouter - Free)</option>
+                    <option value="openrouter/poolside/laguna-xs.2:free" style={{ color: "var(--text)" }}>Laguna XS.2 (OpenRouter - Free)</option>
+                    <option value="openrouter/liquid/lfm2.5-1.2b-thinking:free" style={{ color: "var(--text)" }}>LFM 2.5 Thinking (OpenRouter - Free)</option>
+                    <option value="openrouter/cohere/north-mini-code:free" style={{ color: "var(--text)" }}>Cohere North Mini Code (OpenRouter - Free)</option>
+                    <option value="nvidia/nemotron-3-ultra-550b-a55b" style={{ color: "var(--text)" }}>Nemotron 3 Ultra (NVIDIA - Free)</option>
+                    <option value="mistralai/mixtral-8x7b-instruct-v0.1" style={{ color: "var(--text)" }}>Mixtral 8x7B (NVIDIA - Free)</option>
+                  </select>
+                </div>
+
+                <button
+                  onClick={() => setCopilotPanelOpen(!copilotPanelOpen)}
                   style={{
-                    background: "var(--panel-2)",
-                    border: "1px solid var(--border)",
-                    color: "var(--text)",
+                    background: copilotPanelOpen ? "rgba(255, 178, 54, 0.15)" : "var(--panel-2)",
+                    border: copilotPanelOpen ? "1px solid #FFB236" : "1px solid var(--border)",
+                    color: copilotPanelOpen ? "#FFB236" : "var(--text)",
                     padding: "6px 12px",
-                    fontFamily: "var(--mono)",
                     fontSize: "11.5px",
+                    fontFamily: "var(--sans)",
+                    fontWeight: "bold",
                     outline: "none",
                     cursor: "pointer",
-                    borderRadius: "3px"
+                    borderRadius: "3px",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    marginTop: "12px",
+                    transition: "all 0.2s ease"
                   }}
                 >
-                  <optgroup label="NVIDIA Models" style={{ background: "var(--panel-2)", color: "var(--text-dim)" }}>
-                    <option value="meta/llama-3.3-70b-instruct" style={{ color: "var(--text)" }}>meta/llama-3.3-70b-instruct</option>
-                    <option value="meta/llama-3.1-70b-instruct" style={{ color: "var(--text)" }}>meta/llama-3.1-70b-instruct</option>
-                    <option value="meta/llama-3.1-8b-instruct" style={{ color: "var(--text)" }}>meta/llama-3.1-8b-instruct</option>
-                    <option value="meta/llama-3.2-3b-instruct" style={{ color: "var(--text)" }}>meta/llama-3.2-3b-instruct</option>
-                    <option value="meta/llama-3.2-1b-instruct" style={{ color: "var(--text)" }}>meta/llama-3.2-1b-instruct</option>
-                    <option value="microsoft/phi-4-mini-instruct" style={{ color: "var(--text)" }}>microsoft/phi-4-mini-instruct</option>
-                    <option value="google/gemma-2-2b-it" style={{ color: "var(--text)" }}>google/gemma-2-2b-it</option>
-                    <option value="mistralai/mixtral-8x7b-instruct-v0.1" style={{ color: "var(--text)" }}>mistralai/mixtral-8x7b-instruct-v0.1</option>
-                  </optgroup>
-                  <optgroup label="Sakana AI (Fugu)" style={{ background: "var(--panel-2)", color: "var(--text-dim)" }}>
-                    <option value="sakana/fugu" style={{ color: "var(--text)" }}>sakana/fugu</option>
-                    <option value="sakana/fugu-ultra" style={{ color: "var(--text)" }}>sakana/fugu-ultra</option>
-                  </optgroup>
-                </select>
-                <button onClick={() => handleModeChange("text")} className="ws-back">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: "13px", height: "13px" }}>
+                    <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" />
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                  {copilotPanelOpen ? "Hide Copilot" : "Show Copilot"}
+                </button>
+
+                <button onClick={() => handleModeChange("text")} className="ws-back" style={{ marginTop: "12px" }}>
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                     <line x1="19" y1="12" x2="5" y2="12" />
                     <polyline points="12 19 5 12 12 5" />
@@ -2493,54 +3792,71 @@ export default function DashboardClient({ initialProfile }) {
               </div>
             </div>
             
-            <div className="code-body">
+            <div className="code-body" style={{
+              gridTemplateColumns: copilotPanelOpen ? "220px 1fr 380px" : "220px 1fr"
+            }}>
               <div className="file-tree">
-                <h4>Generated files</h4>
-                {Object.keys(editorFilesHtml).map((file) => (
-                  <div
-                    key={file}
-                    onClick={() => setActiveFile(file)}
-                    className={`file-row ${activeFile === file ? "active" : ""}`}
-                    style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}
-                  >
-                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: "14px", height: "14px" }}>
-                        <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
-                        <path d="M14 2v6h6" />
-                      </svg>
-                      <span>{file}</span>
-                    </div>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        downloadFile(file, editorFilesHtml[file]);
-                      }}
-                      style={{
-                        background: "transparent",
-                        border: "none",
-                        color: "var(--text-dim)",
-                        cursor: "pointer",
-                        padding: "4px",
-                        display: "flex",
-                        alignItems: "center"
-                      }}
-                      title={`Download ${file}`}
-                    >
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: "12px", height: "12px" }}>
-                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                        <polyline points="7 10 12 15 17 10" />
-                        <line x1="12" y1="15" x2="12" y2="3" />
-                      </svg>
-                    </button>
-                  </div>
-                ))}
+                <h4>PROJECT FILES</h4>
+                <div className="file-tree-container mt-1">
+                  {Object.keys(editorFilesHtml).length === 0 ? (
+                    <div className="text-brand-subtext text-xs p-3 italic">No files in project yet.</div>
+                  ) : (
+                    renderSidebarTree(buildFileTree(editorFilesHtml))
+                  )}
+                </div>
+                <div
+                  onClick={() => setActiveFile("Preview")}
+                  className={`file-row ${activeFile === "Preview" ? "active" : ""}`}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    cursor: "pointer",
+                    marginTop: "12px",
+                    borderTop: "1px solid var(--border)",
+                    paddingTop: "12px",
+                    paddingLeft: "8px",
+                    paddingRight: "8px"
+                  }}
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: "13px", height: "13px", color: "var(--accent)" }}>
+                    <polygon points="5 3 19 12 5 21 5 3" />
+                  </svg>
+                  <span style={{ fontWeight: "600", fontSize: "12px", color: "var(--accent)" }}>Live Preview</span>
+                </div>
               </div>
               
               <div className="code-main">
                 <div className="code-tabs">
-                  <div className="code-tab active">{activeFile}</div>
+                  <div className="code-tab active">{activeFile || "No Active File"}</div>
                 </div>
-                <div className={`code-editor ${codeGenerating ? "generating" : ""}`} id="codeEditor" dangerouslySetInnerHTML={{ __html: editorFilesHtml[activeFile] || "" }} />
+                {activeFile === "Preview" ? (
+                  !previewFullscreen ? renderBrowserSimulator() : (
+                    <div style={{ display: "flex", flex: 1, alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: "12px", background: "var(--panel)" }}>
+                      Previewing in Fullscreen mode (click the Fullscreen button in the overlay to exit).
+                    </div>
+                  )
+                ) : !activeFile ? (
+                  <div className="code-editor flex flex-col items-center justify-center text-center p-8 gap-4" style={{ height: "100%", justifyContent: "center", display: "flex" }}>
+                    <div style={{ fontSize: "36px" }}>📁</div>
+                    <h3 className="text-white text-sm font-bold">Empty Project Workspace</h3>
+                    <p className="text-[#8A919C] text-xs max-w-xs leading-relaxed">
+                      Create your first HTML, CSS, JS, or JSX file to begin coding and designing.
+                    </p>
+                    <button
+                      onClick={() => {
+                        setNewResourceType("html");
+                        setNewResourceName("");
+                        setCreateResourceModalOpen(true);
+                      }}
+                      className="px-4 py-2 mt-2 bg-[#5EE0A8] text-black text-xs font-bold rounded hover:bg-[#5EE0A8]/90 transition-all cursor-pointer font-sans"
+                    >
+                      + Create First File
+                    </button>
+                  </div>
+                ) : (
+                  <div className={`code-editor ${codeGenerating ? "generating" : ""}`} id="codeEditor" dangerouslySetInnerHTML={{ __html: editorFilesHtml[activeFile] || "" }} />
+                )}
                 
                 <div className="code-actions-row">
                   <div className="code-gen-status" id="codeGenStatus">
@@ -2568,7 +3884,7 @@ export default function DashboardClient({ initialProfile }) {
                       </svg>
                       Download ZIP
                     </button>
-                    <button onClick={() => { setCodePrompt("Regenerate file content"); setTimeout(() => handleGenerateCode(), 100); }} className="code-action-btn" id="regenBtn">
+                    <button onClick={() => { setCodePrompt("Regenerate file content"); setTimeout(() => startCopilotInitial("Regenerate project code"), 100); }} className="code-action-btn" id="regenBtn">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                         <polyline points="23 4 23 10 17 10" />
                         <polyline points="1 20 1 14 7 14" />
@@ -2579,6 +3895,460 @@ export default function DashboardClient({ initialProfile }) {
                   </div>
                 </div>
               </div>
+
+              {copilotPanelOpen && (
+                <div className="copilot-side-panel" style={{
+                  borderLeft: "1px solid var(--border)",
+                  background: "var(--panel)",
+                  display: "flex",
+                  flexDirection: "column",
+                  height: "100%",
+                  overflow: "hidden",
+                  textAlign: "left"
+                }}>
+                  <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center", background: "var(--panel-2)" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="#FFB236" strokeWidth="2.5" style={{ width: "16px", height: "16px" }}>
+                        <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" />
+                        <path d="M12 16v-4" />
+                        <path d="M12 8h.01" />
+                      </svg>
+                      <span style={{ fontWeight: "bold", fontSize: "13px", color: "var(--text)" }}>NexInc Copilot Tracker</span>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                      <span style={{
+                        fontSize: "9px",
+                        textTransform: "uppercase",
+                        padding: "2px 6px",
+                        borderRadius: "3px",
+                        fontWeight: "bold",
+                        background: copilotStep === "idle" ? "var(--border)" : copilotStep === "finished" ? "rgba(94,224,168,0.2)" : "rgba(255,178,54,0.2)",
+                        color: copilotStep === "idle" ? "var(--text-dim)" : copilotStep === "finished" ? "#5EE0A8" : "#FFB236"
+                      }}>
+                        {copilotStep}
+                      </span>
+                      <button
+                        onClick={handleResetEntireWorkspace}
+                        style={{
+                          background: "rgba(235, 87, 87, 0.08)",
+                          border: "1px solid rgba(235, 87, 87, 0.3)",
+                          color: "#EB5757",
+                          padding: "2px 6px",
+                          fontSize: "9.5px",
+                          borderRadius: "3px",
+                          cursor: "pointer",
+                          fontWeight: "bold",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "2px",
+                          transition: "all 0.15s ease",
+                          outline: "none"
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(235, 87, 87, 0.2)"; e.currentTarget.style.borderColor = "#EB5757"; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(235, 87, 87, 0.08)"; e.currentTarget.style.borderColor = "rgba(235, 87, 87, 0.3)"; }}
+                        title="Restart Codeinc (delete all files & clear memory)"
+                      >
+                        🔄 Restart
+                      </button>
+                    </div>
+                  </div>
+
+                  <div style={{ flex: 1, overflowY: "auto", padding: "16px", display: "flex", flexDirection: "column", gap: "16px" }}>
+                    
+                    {/* PHASE TRACKING TIMELINE */}
+                    <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                      {/* Step 1: Initial */}
+                      <div style={{ display: "flex", alignItems: "flex-start", gap: "10px", fontSize: "12px" }}>
+                        <div style={{
+                          width: "18px", height: "18px", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "9px", fontWeight: "bold",
+                          background: copilotStep === "analyzing" || copilotStep === "options_ready" ? "rgba(255,178,54,0.2)" : ["planning","plan_ready","coding","qa","finished"].includes(copilotStep) ? "rgba(94,224,168,0.2)" : "var(--panel-2)",
+                          color: copilotStep === "analyzing" || copilotStep === "options_ready" ? "#FFB236" : ["planning","plan_ready","coding","qa","finished"].includes(copilotStep) ? "#5EE0A8" : "var(--text-dim)",
+                          border: `1px solid ${copilotStep === "analyzing" || copilotStep === "options_ready" ? "#FFB236" : ["planning","plan_ready","coding","qa","finished"].includes(copilotStep) ? "#5EE0A8" : "var(--border)"}`
+                        }}>
+                          {["planning","plan_ready","coding","qa","finished"].includes(copilotStep) ? "✓" : "1"}
+                        </div>
+                        <div>
+                          <div style={{ fontWeight: "bold", color: "var(--text)" }}>1. Design & Follow-up</div>
+                          <div style={{ fontSize: "10.5px", color: "var(--text-dim)" }}>Analyzing web inspirations & style options</div>
+                        </div>
+                      </div>
+
+                      {/* Step 2: Planning */}
+                      <div style={{ display: "flex", alignItems: "flex-start", gap: "10px", fontSize: "12px" }}>
+                        <div style={{
+                          width: "18px", height: "18px", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "9px", fontWeight: "bold",
+                          background: copilotStep === "planning" || copilotStep === "plan_ready" ? "rgba(255,178,54,0.2)" : ["coding","qa","finished"].includes(copilotStep) ? "rgba(94,224,168,0.2)" : "var(--panel-2)",
+                          color: copilotStep === "planning" || copilotStep === "plan_ready" ? "#FFB236" : ["coding","qa","finished"].includes(copilotStep) ? "#5EE0A8" : "var(--text-dim)",
+                          border: `1px solid ${copilotStep === "planning" || copilotStep === "plan_ready" ? "#FFB236" : ["coding","qa","finished"].includes(copilotStep) ? "#5EE0A8" : "var(--border)"}`
+                        }}>
+                          {["coding","qa","finished"].includes(copilotStep) ? "✓" : "2"}
+                        </div>
+                        <div>
+                          <div style={{ fontWeight: "bold", color: "var(--text)" }}>2. Implementation Plan</div>
+                          <div style={{ fontSize: "10.5px", color: "var(--text-dim)" }}>Review proposed project files layout</div>
+                        </div>
+                      </div>
+
+                      {/* Step 3: Coding */}
+                      <div style={{ display: "flex", alignItems: "flex-start", gap: "10px", fontSize: "12px" }}>
+                        <div style={{
+                          width: "18px", height: "18px", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "9px", fontWeight: "bold",
+                          background: copilotStep === "coding" ? "rgba(255,178,54,0.2)" : ["qa","finished"].includes(copilotStep) ? "rgba(94,224,168,0.2)" : "var(--panel-2)",
+                          color: copilotStep === "coding" ? "#FFB236" : ["qa","finished"].includes(copilotStep) ? "#5EE0A8" : "var(--text-dim)",
+                          border: `1px solid ${copilotStep === "coding" ? "#FFB236" : ["qa","finished"].includes(copilotStep) ? "#5EE0A8" : "var(--border)"}`
+                        }}>
+                          {["qa","finished"].includes(copilotStep) ? "✓" : "3"}
+                        </div>
+                        <div>
+                          <div style={{ fontWeight: "bold", color: "var(--text)" }}>3. Code Generation</div>
+                          <div style={{ fontSize: "10.5px", color: "var(--text-dim)" }}>Coding model streaming workspace files</div>
+                        </div>
+                      </div>
+
+                      {/* Step 4: QA Critique */}
+                      <div style={{ display: "flex", alignItems: "flex-start", gap: "10px", fontSize: "12px" }}>
+                        <div style={{
+                          width: "18px", height: "18px", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "9px", fontWeight: "bold",
+                          background: copilotStep === "qa" ? "rgba(255,178,54,0.2)" : copilotStep === "finished" ? "rgba(94,224,168,0.2)" : "var(--panel-2)",
+                          color: copilotStep === "qa" ? "#FFB236" : copilotStep === "finished" ? "#5EE0A8" : "var(--text-dim)",
+                          border: `1px solid ${copilotStep === "qa" ? "#FFB236" : copilotStep === "finished" ? "#5EE0A8" : "var(--border)"}`
+                        }}>
+                          {copilotStep === "finished" ? "✓" : "4"}
+                        </div>
+                        <div>
+                          <div style={{ fontWeight: "bold", color: "var(--text)" }}>4. QA Critique & Self-Correction</div>
+                          <div style={{ fontSize: "10.5px", color: "var(--text-dim)" }}>Human-like evaluation & correction cycles</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ borderTop: "1px solid var(--border)", paddingTop: "12px" }}></div>
+
+                    {/* INTERACTION SECTION */}
+                    {copilotStep === "idle" && (
+                      <div style={{ textAlign: "center", padding: "20px 0", color: "var(--text-dim)" }}>
+                        <div style={{ fontSize: "28px", marginBottom: "8px" }}>💡</div>
+                        <div style={{ fontSize: "12px", fontWeight: "bold", color: "var(--text)" }}>Ready to Assist</div>
+                        <p style={{ fontSize: "11px", marginTop: "4px" }}>Type a message in the bottom prompt bar to trigger the agent workflow.</p>
+                      </div>
+                    )}
+
+                    {copilotStep === "analyzing" && (
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "20px 0", gap: "10px" }}>
+                        <div className="spinner" style={{ width: "20px", height: "20px", border: "2px solid #FFB236", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.8s linear infinite" }}></div>
+                        <div style={{ fontSize: "12px", color: "#FFB236", fontWeight: "bold" }}>Analyzing workspace & search references...</div>
+                        <div style={{ width: "100%", maxHeight: "150px", overflowY: "auto", background: "var(--panel-2)", padding: "8px", borderRadius: "4px", fontSize: "10.5px", fontFamily: "var(--mono)" }}>
+                          {copilotLogs.map((l, i) => (
+                            <div key={i} style={{ color: l.error ? "#FF5240" : "var(--text-dim)", marginBottom: "4px" }}>[{l.time}] {l.message}</div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {copilotStep === "options_ready" && (
+                      <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                        <div style={{ background: "rgba(255, 178, 54, 0.06)", border: "1px solid rgba(255, 178, 54, 0.2)", borderRadius: "6px", padding: "12px" }}>
+                          <div style={{ fontSize: "11.5px", fontWeight: "bold", color: "#FFB236", marginBottom: "6px" }}>Question / Clarification:</div>
+                          <div style={{ fontSize: "12px", color: "var(--text)", lineHeight: "1.5" }}>
+                            {typeof followUpQuestion === "object" ? JSON.stringify(followUpQuestion) : String(followUpQuestion)}
+                          </div>
+                        </div>
+
+                        {suggestedDesign && (
+                          <div style={{ fontSize: "11px", color: "var(--text-dim)", background: "var(--panel-2)", border: "1px solid var(--border)", borderRadius: "4px", padding: "8px" }}>
+                            <div style={{ fontWeight: "bold", color: "#FFB236", marginBottom: "4px" }}>Suggested Design System:</div>
+                            {typeof suggestedDesign === "string" ? (
+                              <div>{suggestedDesign}</div>
+                            ) : (
+                              <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                                {Object.entries(suggestedDesign).map(([key, val]) => {
+                                  const displayVal = typeof val === "object" ? JSON.stringify(val) : String(val);
+                                  return (
+                                    <div key={key}>
+                                      <strong style={{ textTransform: "capitalize" }}>{key}:</strong> {displayVal}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "4px" }}>
+                          {followUpOptions.map((opt, i) => (
+                            <button
+                              key={i}
+                              onClick={() => submitCopilotOption(opt)}
+                              style={{
+                                background: "var(--panel-2)",
+                                border: "1px solid var(--border)",
+                                color: "var(--text)",
+                                padding: "8px 12px",
+                                borderRadius: "4px",
+                                fontSize: "11px",
+                                textAlign: "left",
+                                cursor: "pointer",
+                                transition: "all 0.15s ease"
+                              }}
+                              onMouseEnter={(e) => e.target.style.borderColor = "#FFB236"}
+                              onMouseLeave={(e) => e.target.style.borderColor = "var(--border)"}
+                            >
+                              <span style={{ fontWeight: "bold", color: "#FFB236", marginRight: "4px" }}>Option {String.fromCharCode(65 + i)}:</span>
+                              {typeof opt === "object" ? JSON.stringify(opt) : String(opt)}
+                            </button>
+                          ))}
+                        </div>
+
+                        <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginTop: "8px", borderTop: "1px solid var(--border)", paddingTop: "12px" }}>
+                          <label style={{ fontSize: "10.5px", fontWeight: "bold", color: "var(--text-dim)" }}>Custom Response / Special Prompts:</label>
+                          <div style={{ display: "flex", gap: "6px" }}>
+                            <input
+                              type="text"
+                              value={customReplyText}
+                              onChange={(e) => setCustomReplyText(e.target.value)}
+                              placeholder="Type a custom reply or specific design prompt..."
+                              style={{
+                                flex: 1,
+                                background: "var(--panel-2)",
+                                border: "1px solid var(--border)",
+                                color: "var(--text)",
+                                padding: "6px 10px",
+                                fontSize: "11px",
+                                borderRadius: "3px",
+                                outline: "none"
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" && customReplyText.trim()) {
+                                  submitCopilotOption(customReplyText);
+                                  setCustomReplyText("");
+                                }
+                              }}
+                            />
+                            <button
+                              onClick={() => {
+                                if (customReplyText.trim()) {
+                                  submitCopilotOption(customReplyText);
+                                  setCustomReplyText("");
+                                }
+                              }}
+                              style={{
+                                background: "#FFB236",
+                                color: "black",
+                                border: "none",
+                                padding: "6px 12px",
+                                fontSize: "11px",
+                                fontWeight: "bold",
+                                borderRadius: "3px",
+                                cursor: "pointer"
+                              }}
+                            >
+                              Send
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {copilotStep === "planning" && (
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "20px 0", gap: "10px" }}>
+                        <div className="spinner" style={{ width: "20px", height: "20px", border: "2px solid #FFB236", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.8s linear infinite" }}></div>
+                        <div style={{ fontSize: "12px", color: "#FFB236", fontWeight: "bold" }}>Generating Implementation Plan...</div>
+                        <div style={{ width: "100%", maxHeight: "150px", overflowY: "auto", background: "var(--panel-2)", padding: "8px", borderRadius: "4px", fontSize: "10.5px", fontFamily: "var(--mono)" }}>
+                          {copilotPlan}
+                        </div>
+                      </div>
+                    )}
+
+                    {copilotStep === "plan_ready" && (
+                      <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                        <div style={{ background: "rgba(255, 178, 54, 0.03)", border: "1px solid var(--border)", borderRadius: "6px", padding: "12px", maxHeight: "250px", overflowY: "auto" }}>
+                          <div style={{ fontSize: "11px", fontWeight: "bold", color: "#FFB236", marginBottom: "8px", textTransform: "uppercase" }}>Proposed Implementation Plan:</div>
+                          <div style={{ fontSize: "11px", color: "var(--text-dim)", fontFamily: "var(--mono)", whiteSpace: "pre-wrap", lineHeight: "1.5" }}>
+                            {copilotPlan}
+                          </div>
+                        </div>
+
+                        <button
+                          onClick={approveAndGenerateCode}
+                          style={{
+                            background: "#5EE0A8",
+                            color: "black",
+                            border: "none",
+                            padding: "10px 16px",
+                            fontSize: "12px",
+                            fontWeight: "bold",
+                            borderRadius: "4px",
+                            cursor: "pointer",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            gap: "8px",
+                            boxShadow: "0 4px 12px rgba(94, 224, 168, 0.2)"
+                          }}
+                        >
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" style={{ width: "14px", height: "14px" }}>
+                            <polyline points="20 6 9 17 4 12" />
+                          </svg>
+                          Approve Plan & Code
+                        </button>
+                      </div>
+                    )}
+
+                    {copilotStep === "coding" && (
+                      <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                          <div className="spinner" style={{ width: "16px", height: "16px", border: "2px solid #5EE0A8", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.8s linear infinite" }}></div>
+                          <span style={{ fontSize: "12px", color: "#5EE0A8", fontWeight: "bold" }}>Coding model streaming code...</span>
+                        </div>
+                        <div style={{ width: "100%", maxHeight: "200px", overflowY: "auto", background: "var(--panel-2)", padding: "10px", borderRadius: "4px", fontSize: "10.5px", fontFamily: "var(--mono)" }}>
+                          {copilotLogs.map((l, i) => (
+                            <div key={i} style={{ color: "var(--text-dim)", marginBottom: "4px" }}>[{l.time}] {l.message}</div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {copilotStep === "qa" && (
+                      <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                          <div className="spinner" style={{ width: "16px", height: "16px", border: "2px solid #FFB236", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.8s linear infinite" }}></div>
+                          <span style={{ fontSize: "12px", color: "#FFB236", fontWeight: "bold" }}>Manager reviewing code quality (QA)...</span>
+                        </div>
+
+                        {qaCritiqueLog && (
+                          <div style={{ background: "rgba(255, 178, 54, 0.05)", border: "1px solid rgba(255, 178, 54, 0.15)", borderRadius: "4px", padding: "10px", maxHeight: "150px", overflowY: "auto", fontSize: "10.5px", color: "var(--text-dim)", fontFamily: "var(--mono)" }}>
+                            <div style={{ fontWeight: "bold", color: "#FFB236", marginBottom: "4px" }}>QA Critique & Refinement Plan:</div>
+                            {qaCritiqueLog}
+                          </div>
+                        )}
+
+                        <div style={{ width: "100%", maxHeight: "150px", overflowY: "auto", background: "var(--panel-2)", padding: "8px", borderRadius: "4px", fontSize: "10.5px", fontFamily: "var(--mono)" }}>
+                          {copilotLogs.map((l, i) => (
+                            <div key={i} style={{ color: "var(--text-dim)", marginBottom: "4px" }}>[{l.time}] {l.message}</div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {copilotStep === "finished" && (
+                      <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                        <div style={{ background: "rgba(94, 224, 168, 0.08)", border: "1px solid rgba(94, 224, 168, 0.2)", borderRadius: "6px", padding: "12px", textAlign: "center" }}>
+                          <div style={{ fontSize: "24px", marginBottom: "6px" }}>✓</div>
+                          <div style={{ fontSize: "12px", fontWeight: "bold", color: "#5EE0A8" }}>Workflow Completed!</div>
+                          <p style={{ fontSize: "11px", color: "var(--text-dim)", marginTop: "4px" }}>The code has been generated, critiqued by QA, refined, and verified.</p>
+                        </div>
+
+                        {qaCritiqueLog && (
+                          <div style={{ background: "var(--panel-2)", border: "1px solid var(--border)", borderRadius: "4px", padding: "10px", maxHeight: "150px", overflowY: "auto", fontSize: "10.5px", color: "var(--text-dim)", fontFamily: "var(--mono)" }}>
+                            <div style={{ fontWeight: "bold", color: "#5EE0A8", marginBottom: "4px" }}>Final QA Critique & Verification:</div>
+                            {qaCritiqueLog}
+                          </div>
+                        )}
+
+                        <button
+                          onClick={() => {
+                            setCopilotStep("idle");
+                            setCodeGenStatus("Awaiting prompt · HTML/CSS/JS");
+                          }}
+                          style={{
+                            background: "var(--panel-2)",
+                            border: "1px solid var(--border)",
+                            color: "var(--text)",
+                            padding: "8px 12px",
+                            fontSize: "11px",
+                            fontWeight: "bold",
+                            borderRadius: "4px",
+                            cursor: "pointer"
+                          }}
+                        >
+                          Start New Task
+                        </button>
+                      </div>
+                    )}
+
+                    {copilotStep === "error" && (
+                      <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                        <div style={{ background: "rgba(255, 82, 64, 0.08)", border: "1px solid rgba(255, 82, 64, 0.2)", borderRadius: "6px", padding: "12px", textAlign: "center" }}>
+                          <div style={{ fontSize: "24px", marginBottom: "6px" }}>⚠️</div>
+                          <div style={{ fontSize: "12px", fontWeight: "bold", color: "#FF5240" }}>Workflow Error</div>
+                          <p style={{ fontSize: "11px", color: "var(--text-dim)", marginTop: "4px" }}>An error occurred during execution.</p>
+                        </div>
+                        <div style={{ width: "100%", maxHeight: "150px", overflowY: "auto", background: "var(--panel-2)", padding: "8px", borderRadius: "4px", fontSize: "10.5px", fontFamily: "var(--mono)", color: "#FF5240" }}>
+                          {copilotLogs.map((l, i) => (
+                            <div key={i} style={{ marginBottom: "4px" }}>[{l.time}] {l.message}</div>
+                          ))}
+                        </div>
+                        <button
+                          onClick={() => startCopilotInitial()}
+                          style={{
+                            background: "var(--panel-2)",
+                            border: "1px solid var(--border)",
+                            color: "var(--text)",
+                            padding: "8px 12px",
+                            fontSize: "11px",
+                            fontWeight: "bold",
+                            borderRadius: "4px",
+                            cursor: "pointer"
+                          }}
+                        >
+                          Retry Step
+                        </button>
+                      </div>
+                    )}
+
+                    {codeGenerating && (
+                      <div style={{ display: "flex", flexDirection: "column", gap: "8px", borderTop: "1px solid var(--border)", paddingTop: "12px", marginTop: "12px" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "10.5px", color: "var(--text-dim)" }}>
+                          <span>Elapsed Time: <strong style={{ color: "#FFB236" }}>{loadingSeconds}s</strong></span>
+                          {loadingSeconds >= 12 && (
+                            <span style={{ color: "#FF5240", fontWeight: "bold" }}>⚠️ Action may be stuck</span>
+                          )}
+                        </div>
+                        
+                        {loadingSeconds >= 12 && (
+                          <div style={{
+                            background: "rgba(255, 178, 54, 0.08)",
+                            border: "1px solid #FFB236",
+                            borderRadius: "4px",
+                            padding: "8px 10px",
+                            fontSize: "11px",
+                            color: "#FFB236",
+                            lineHeight: "1.4"
+                          }}>
+                            The API response is taking longer than usual. You can cancel and restart the request using the button below.
+                          </div>
+                        )}
+
+                        <button
+                          onClick={stopCopilotWorkflow}
+                          style={{
+                            background: "rgba(255, 82, 64, 0.1)",
+                            border: "1px solid #FF5240",
+                            color: "#FF5240",
+                            padding: "8px 12px",
+                            fontSize: "11px",
+                            fontWeight: "bold",
+                            borderRadius: "4px",
+                            cursor: "pointer",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            gap: "6px",
+                            transition: "all 0.15s ease",
+                            fontFamily: "var(--sans)"
+                          }}
+                        >
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: "12px", height: "12px" }}>
+                            <rect x="3" y="3" width="18" height="18" rx="2" />
+                          </svg>
+                          Cancel / Reset Agent
+                        </button>
+                      </div>
+                    )}
+
+                  </div>
+                </div>
+              )}
             </div>
             
             <div className="code-prompt-wrap">
@@ -2601,7 +4371,7 @@ export default function DashboardClient({ initialProfile }) {
                   }}
                 />
                 <button type="submit" className="code-prompt-go" id="codePromptGo">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                     <line x1="22" y1="2" x2="11" y2="13" />
                     <polygon points="22 2 15 22 11 13 2 9 22 2" />
                   </svg>
@@ -2968,6 +4738,179 @@ export default function DashboardClient({ initialProfile }) {
                 className="w-full py-2 border border-[#FF6B5C]/30 text-[#FF6B5C] font-bold text-xs rounded hover:bg-[#FF6B5C]/10 transition-all cursor-pointer font-mono"
               >
                 Sign Out Account
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CUSTOM CONFIRM/PROMPT MODAL DIALOG OVERLAY */}
+      {customModal && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div
+            onClick={() => customModal.onCancel?.()}
+            className="absolute inset-0 bg-black/70 backdrop-blur-md transition-opacity duration-300"
+          />
+          <div className="bg-[#13161B] w-full max-w-sm rounded border border-[#262B33] p-5 shadow-2xl relative z-10 flex flex-col gap-4 animate-in zoom-in-95 duration-200 font-sans">
+            <div>
+              <h2 className="text-sm font-bold text-white flex items-center gap-2">
+                {customModal.type === 'confirm' ? '⚠️' : '📝'} {customModal.title}
+              </h2>
+              <p className="text-[#8A919C] text-xs mt-2 leading-relaxed">
+                {customModal.message}
+              </p>
+            </div>
+
+            {customModal.type === 'prompt' && (
+              <div className="mt-1">
+                <input
+                  type="text"
+                  value={customModalInputVal}
+                  onChange={(e) => setCustomModalInputVal(e.target.value)}
+                  placeholder={customModal.placeholder || ''}
+                  className="w-full bg-[#0B0D10] border border-[#262B33] rounded px-3 py-2 text-xs text-white focus:outline-none focus:border-[#5EE0A8] transition-colors"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      customModal.onConfirm(customModalInputVal);
+                    } else if (e.key === 'Escape') {
+                      customModal.onCancel?.();
+                    }
+                  }}
+                />
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 mt-2">
+              <button
+                onClick={() => customModal.onCancel?.()}
+                className="px-3 py-1.5 text-xs font-semibold rounded border border-[#262B33] bg-[#0B0D10] text-[#8A919C] hover:bg-[#1E2330] hover:text-white transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (customModal.type === 'prompt') {
+                    customModal.onConfirm(customModalInputVal);
+                  } else {
+                    customModal.onConfirm();
+                  }
+                }}
+                className={`px-3.5 py-1.5 text-xs font-bold rounded text-white transition-all cursor-pointer ${
+                  customModal.title.toLowerCase().includes('delete')
+                    ? 'bg-[#FF453A] hover:bg-[#FF453A]/90'
+                    : 'bg-[#5EE0A8] hover:bg-[#5EE0A8]/90 !text-[#0B0D10]'
+                }`}
+              >
+                {customModal.type === 'prompt' ? 'Create' : customModal.title.toLowerCase().includes('delete') ? 'Delete' : 'Confirm'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* NEW FILE / FOLDER SELECTOR BOX MODAL */}
+      {createResourceModalOpen && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div
+            onClick={() => setCreateResourceModalOpen(false)}
+            className="absolute inset-0 bg-black/70 backdrop-blur-md transition-opacity duration-300"
+          />
+          <div className="bg-[#13161B] w-full max-w-md rounded border border-[#262B33] p-5 shadow-2xl relative z-10 flex flex-col gap-4 animate-in zoom-in-95 duration-200 font-sans">
+            <div>
+              <h2 className="text-sm font-bold text-white flex items-center gap-2">
+                📁 Create New Resource
+              </h2>
+              <p className="text-[#8A919C] text-xs mt-1">
+                Enter name and select type below.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] text-brand-subtext font-black uppercase tracking-wider">Name</label>
+              <input
+                type="text"
+                value={newResourceName}
+                onChange={(e) => setNewResourceName(e.target.value)}
+                placeholder={newResourceType === "folder" ? "styles" : "index"}
+                className="w-full bg-[#0B0D10] border border-[#262B33] rounded px-3 py-2 text-xs text-white focus:outline-none focus:border-[#5EE0A8] transition-colors"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    handleCreateResource();
+                  } else if (e.key === 'Escape') {
+                    setCreateResourceModalOpen(false);
+                  }
+                }}
+              />
+              {newResourceName.trim() && (
+                <span className="text-[10px] text-[#8A919C] mt-1 font-mono">
+                  Will create: <span className="text-[#5EE0A8]">
+                    {selectedParentFolder === "/" ? "" : selectedParentFolder + "/"}
+                    {newResourceName.trim()}
+                    {newResourceType === "html" && !newResourceName.toLowerCase().endsWith(".html") ? ".html" : ""}
+                    {newResourceType === "jsx" && !newResourceName.toLowerCase().endsWith(".jsx") ? ".jsx" : ""}
+                    {newResourceType === "js" && !newResourceName.toLowerCase().endsWith(".js") ? ".js" : ""}
+                    {newResourceType === "css" && !newResourceName.toLowerCase().endsWith(".css") ? ".css" : ""}
+                    {newResourceType === "folder" ? "/ (folder)" : ""}
+                  </span>
+                </span>
+              )}
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] text-brand-subtext font-black uppercase tracking-wider">Destination Folder</label>
+              <select
+                value={selectedParentFolder}
+                onChange={(e) => setSelectedParentFolder(e.target.value)}
+                className="w-full bg-[#0B0D10] border border-[#262B33] rounded px-3 py-2 text-xs text-white focus:outline-none focus:border-[#5EE0A8] transition-colors"
+              >
+                <option value="/">/ (Root)</option>
+                {getExistingFolders().map(folder => (
+                  <option key={folder} value={folder}>/{folder}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <label className="text-[10px] text-brand-subtext font-black uppercase tracking-wider">Select Type</label>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { id: "html", label: "HTML File", icon: "🌐" },
+                  { id: "jsx", label: "React JSX", icon: "⚛️" },
+                  { id: "js", label: "JavaScript", icon: "🟨" },
+                  { id: "css", label: "CSS Style", icon: "🎨" },
+                  { id: "folder", label: "Folder", icon: "📁" },
+                  { id: "custom", label: "Custom", icon: "📄" }
+                ].map((item) => (
+                  <div
+                    key={item.id}
+                    onClick={() => setNewResourceType(item.id)}
+                    className={`p-3 rounded border text-center cursor-pointer transition-all flex flex-col items-center gap-1.5 ${
+                      newResourceType === item.id
+                        ? "border-[#5EE0A8] bg-[#5EE0A8]/10 text-white"
+                        : "border-[#262B33] bg-[#0B0D10] text-[#8A919C] hover:border-[#262B33]/80 hover:text-white"
+                    }`}
+                  >
+                    <span className="text-base">{item.icon}</span>
+                    <span className="text-[10px] font-bold font-sans">{item.label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 mt-2">
+              <button
+                onClick={() => setCreateResourceModalOpen(false)}
+                className="px-3 py-1.5 text-xs font-semibold rounded border border-[#262B33] bg-[#0B0D10] text-[#8A919C] hover:bg-[#1E2330] hover:text-white transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCreateResource}
+                className="px-3.5 py-1.5 text-xs font-bold rounded bg-[#5EE0A8] hover:bg-[#5EE0A8]/90 text-[#0B0D10] transition-all cursor-pointer"
+              >
+                Create
               </button>
             </div>
           </div>

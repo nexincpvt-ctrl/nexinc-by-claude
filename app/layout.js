@@ -104,13 +104,13 @@ export default function RootLayout({ children }) {
       className={`${quicksand.variable} ${nunito.variable} h-full antialiased`}
       suppressHydrationWarning
     >
-      <head>
-        <script
+      <body className="min-h-full flex flex-col bg-brand-bg text-brand-text font-sans transition-colors duration-300">
+        <Script
+          id="ld-json"
           type="application/ld+json"
+          strategy="afterInteractive"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
-      </head>
-      <body className="min-h-full flex flex-col bg-brand-bg text-brand-text font-sans transition-colors duration-300">
         <Script
           id="theme-initializer"
           strategy="beforeInteractive"

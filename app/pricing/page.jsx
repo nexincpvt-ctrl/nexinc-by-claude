@@ -36,6 +36,22 @@ export default function PricingPage() {
   // Accordion FAQ states
   const [openFaqIndex, setOpenFaqIndex] = useState(null);
 
+  // UI Alerts / Toast
+  const [toast, setToast] = useState({ message: "", visible: false, isError: false });
+
+  const showToast = (message, isError = false) => {
+    setToast({ message, visible: true, isError });
+  };
+
+  useEffect(() => {
+    if (toast.visible) {
+      const timer = setTimeout(() => {
+        setToast((prev) => ({ ...prev, visible: false }));
+      }, 3500);
+      return () => clearTimeout(timer);
+    }
+  }, [toast.visible]);
+
   useEffect(() => {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
@@ -193,11 +209,11 @@ export default function PricingPage() {
       if (data.url) {
         window.location.href = data.url;
       } else {
-        alert(data.error || "Failed to initiate Stripe Checkout.");
+        showToast(data.error || "Failed to initiate Stripe Checkout.", true);
       }
     } catch (err) {
       console.error("Stripe Checkout Error:", err);
-      alert("Something went wrong. Please try again.");
+      showToast("Something went wrong. Please try again.", true);
     } finally {
       setCheckingOut(false);
     }
@@ -213,11 +229,11 @@ export default function PricingPage() {
       if (data.url) {
         window.location.href = data.url;
       } else {
-        alert(data.error || "Failed to open Billing Portal.");
+        showToast(data.error || "Failed to open Billing Portal.", true);
       }
     } catch (err) {
       console.error("Billing Portal Error:", err);
-      alert("Something went wrong. Please try again.");
+      showToast("Something went wrong. Please try again.", true);
     } finally {
       setLoadingPortal(false);
     }
@@ -464,6 +480,15 @@ export default function PricingPage() {
 
   return (
     <div className="landing-body" style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
+      {/* Toast notifications */}
+      {toast.visible && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[200] animate-in fade-in duration-300">
+          <div className={`bg-[#13161B] border ${toast.isError ? 'border-[#FF453A]/20 text-[#FF453A]' : 'border-[#5EE0A8]/20 text-[#E9EBEE]'} px-6 py-2.5 rounded shadow-2xl text-xs font-mono`}>
+            {toast.message}
+          </div>
+        </div>
+      )}
+
       {/* Background Elements */}
       <div id="video-bg" style={{ background: "var(--dark)" }}>
         <div id="video-overlay"></div>

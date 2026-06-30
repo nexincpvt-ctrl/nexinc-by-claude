@@ -1390,6 +1390,7 @@
   font-size: 13px;
   line-height: 1.75;
   text-align: left;
+  white-space: pre-wrap;
 }
 
 .dashboard-page-body .code-editor .ln {
@@ -1923,6 +1924,9 @@
 }
 .dashboard-page-body .mode-btn[data-mode="codeinc"] {
   --mode-color: var(--code-accent);
+}
+.dashboard-page-body .mode-btn[data-mode="nexstudy"] {
+  --mode-color: var(--study-accent, #a78bfa);
 }
 
 .dashboard-page-body .sidebar-panel {
