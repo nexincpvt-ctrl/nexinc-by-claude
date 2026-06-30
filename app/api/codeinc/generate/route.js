@@ -84,11 +84,11 @@ function getModelCredentials(model) {
 
   if (model.startsWith("sakana/")) {
     apiUrl = "https://api.sakana.ai/v1/chat/completions";
-    apiKey = process.env.SAKANA_API_KEY;
+    apiKey = process.env.SAKANA_API_KEY || process.env.NVIDIA_API_KEY;
     providerModelId = model.replace("sakana/", "");
   } else if (model.startsWith("mimo/")) {
     apiUrl = "https://api.xiaomimimo.com/v1/chat/completions";
-    apiKey = process.env.MIMO_API_KEY;
+    apiKey = process.env.MIMO_API_KEY || process.env.NVIDIA_API_KEY;
     providerModelId = model.replace("mimo/", "");
   } else if (model.startsWith("gemini-")) {
     apiUrl = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
@@ -127,6 +127,11 @@ function getModelCredentials(model) {
     apiKey = process.env.GROQ_API_KEY;
     providerModelId = model.replace("groq/", "");
   }
+
+  if (!apiKey) {
+    throw new Error(`Missing API key for model "${model}". Please set the required environment variable in Vercel settings.`);
+  }
+
   return { apiUrl, apiKey, providerModelId };
 }
 
@@ -161,15 +166,6 @@ async function runLLMCall(model, messages, jsonMode = false) {
     body: JSON.stringify(body)
   });
 
-  const fallbackNvidiaKey = process.env.NVIDIA_API_KEY_FALLBACK;
-  if ((res.status === 401 || res.status === 403) && fallbackNvidiaKey && apiKey !== fallbackNvidiaKey && apiUrl.includes("nvidia.com")) {
-    console.warn("NVIDIA Custom API Key failed with status " + res.status + ". Retrying with default fallback key.");
-    res = await fetch(apiUrl, {
-      method: "POST",
-      headers: getHeaders(fallbackNvidiaKey),
-      body: JSON.stringify(body)
-    });
-  }
 
   if (!res.ok) {
     const errText = await res.text();
@@ -208,21 +204,6 @@ async function streamLLMCall(model, messages, onChunk) {
     })
   });
 
-  const fallbackNvidiaKey = process.env.NVIDIA_API_KEY_FALLBACK;
-  if ((res.status === 401 || res.status === 403) && fallbackNvidiaKey && apiKey !== fallbackNvidiaKey && apiUrl.includes("nvidia.com")) {
-    console.warn("NVIDIA Custom API Key failed with status " + res.status + ". Retrying with default fallback key.");
-    res = await fetch(apiUrl, {
-      method: "POST",
-      headers: getHeaders(fallbackNvidiaKey),
-      body: JSON.stringify({
-        model: providerModelId,
-        messages,
-        temperature: 0.2,
-        max_tokens: 4096,
-        stream: true
-      })
-    });
-  }
 
   if (!res.ok) {
     const errText = await res.text();
