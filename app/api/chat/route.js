@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getMessages } from "@/lib/supabase/queries";
 import { NVIDIA_FREE_MODELS } from "@/lib/ai/nvidiaModels";
 import { isVisionCapable } from "@/lib/ai/modelTags";
+import { MODELS_REGISTRY } from "@/lib/ai/modelsRegistry";
 
 export const maxDuration = 60;
 
@@ -80,22 +81,44 @@ export async function POST(req) {
     let providerModelId = "";
     let mockReply = "";
 
-    // Map curated custom free models to their real provider endpoints
-    if (model === "gpt-oss-120b") {
+    // Try to match the model key in the unified MODELS_REGISTRY
+    const registryMatch = MODELS_REGISTRY.flatMap((m) => m.providers).find((p) => p.key === model);
+    if (registryMatch) {
+      provider = registryMatch.provider;
+      providerModelId = registryMatch.providerModelId;
+    }
+
+    if (!provider) {
+      // 0. Handle Prefixes First to prevent keyword overlaps (like openrouter-google/gemma-4-... matching "gemma-4-")
+      if (model.startsWith("groq-")) {
       provider = "groq";
-      providerModelId = "llama-3.3-70b-versatile";
+      providerModelId = model.replace("groq-", "");
+    } else if (model.startsWith("openrouter-")) {
+      provider = "openrouter";
+      providerModelId = model.replace("openrouter-", "");
+    } else if (model.startsWith("nvidia-")) {
+      const nvidiaMatch = NVIDIA_FREE_MODELS.find((m) => m.key === model);
+      if (nvidiaMatch) {
+        provider = "nvidia";
+        providerModelId = nvidiaMatch.providerModelId;
+      }
+    } else if (model.startsWith("cerebras-")) {
+      provider = "cerebras";
+      providerModelId = model.replace("cerebras-", "");
+    }
+    // 1. Curated custom free models mapped to their best/real provider endpoints
+    else if (model === "gpt-oss-120b" || model.includes("gpt-oss-120b")) {
+      provider = "cerebras";
+      providerModelId = "gpt-oss-120b";
     } else if (model === "zai-glm-4.7") {
-      provider = "groq";
-      providerModelId = "llama-3.3-70b-versatile";
-    } else if (model.includes("gpt-oss-120b")) {
-      provider = "groq";
-      providerModelId = "llama-3.3-70b-versatile";
+      provider = "cerebras";
+      providerModelId = "zai-glm-4.7";
     } else if (model.includes("llama-3.3-70b")) {
       provider = "groq";
       providerModelId = "llama-3.3-70b-versatile";
     } else if (model.includes("qwen3-next-80b")) {
       provider = "groq";
-      providerModelId = "qwen-2.5-coder-32b";
+      providerModelId = "qwen/qwen3-32b";
     } else if (model.includes("nemotron-3-ultra")) {
       provider = "nvidia";
       providerModelId = "nvidia/nemotron-3-ultra-550b-a55b";
@@ -110,10 +133,10 @@ export async function POST(req) {
       providerModelId = "nvidia/nemotron-mini-4b-instruct";
     } else if (model === "gpt-oss-20b") {
       provider = "groq";
-      providerModelId = "llama-3.3-70b-versatile";
+      providerModelId = "openai/gpt-oss-20b";
     } else if (model.includes("gemma-4-")) {
-      provider = "groq";
-      providerModelId = "gemma2-9b-it";
+      provider = "cerebras";
+      providerModelId = "gemma-4-31b";
     } else if (model.startsWith("gemini-") || model.startsWith("gemini-live-")) {
       provider = "gemini";
       providerModelId = model.includes("pro") ? "gemini-2.5-pro" : "gemini-2.5-flash";
@@ -180,18 +203,7 @@ export async function POST(req) {
     } else if (["sora", "kling-1.5", "runway-gen3", "luma-dream-machine"].includes(model)) {
       provider = "mock-gen";
       providerModelId = model;
-    } else if (model.startsWith("groq-")) {
-      provider = "groq";
-      providerModelId = model.replace("groq-", "");
-    } else if (model.startsWith("openrouter-")) {
-      provider = "openrouter";
-      providerModelId = model.replace("openrouter-", "");
-    } else if (model.startsWith("nvidia-")) {
-      const nvidiaMatch = NVIDIA_FREE_MODELS.find((m) => m.key === model);
-      if (nvidiaMatch) {
-        provider = "nvidia";
-        providerModelId = nvidiaMatch.providerModelId;
-      }
+    }
     }
 
     if (!provider) {
@@ -469,6 +481,8 @@ export async function POST(req) {
        deepseek: { url: "https://api.deepseek.com/chat/completions", key: process.env.DEEPSEEK_API_KEY },
        mistral: { url: "https://api.mistral.ai/v1/chat/completions", key: process.env.MISTRAL_API_KEY },
        cerebras: { url: "https://api.cerebras.ai/v1/chat/completions", key: process.env.CEREBRAS_API_KEY },
+       fireworks: { url: "https://api.fireworks.ai/inference/v1/chat/completions", key: process.env.FIREWORKS_API_KEY },
+       zai: { url: "https://open.bigmodel.cn/api/paas/v4/chat/completions", key: process.env.ZAI_API_KEY },
      };
 
     if (directEndpoints[provider]) {

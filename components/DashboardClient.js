@@ -85,34 +85,8 @@ const welcomeSuggestions = [
   }
 ];
 
-// Static list of Ultimate Models
-const ultimateModels = [
-  { key: "mistral-large", label: "Mistral Large (Mistral AI)", provider: "mistral", providerModelId: "mistral-large", tier: "ultimate" },
-  { key: "mistral-large-3", label: "Mistral Large 3 (Mistral AI)", provider: "mistral", providerModelId: "mistral-large-3", tier: "ultimate" },
-  { key: "mistral-medium-3.5", label: "Mistral Medium 3.5 (Mistral AI)", provider: "mistral", providerModelId: "mistral-medium-3.5", tier: "ultimate" },
-  { key: "mistral-small-4", label: "Mistral Small 4 (Mistral AI)", provider: "mistral", providerModelId: "mistral-small-4", tier: "ultimate" },
-  { key: "gpt-5.5", label: "GPT-5.5 (OpenAI)", provider: "openai", providerModelId: "gpt-5.5", tier: "ultimate" },
-  { key: "gpt-5.5-pro", label: "GPT-5.5 Pro (OpenAI)", provider: "openai", providerModelId: "gpt-5.5-pro", tier: "ultimate" },
-  { key: "gpt-5.4", label: "GPT-5.4 (OpenAI)", provider: "openai", providerModelId: "gpt-5.4", tier: "ultimate" },
-  { key: "gpt-5.4-pro", label: "GPT-5.4 Pro (OpenAI)", provider: "openai", providerModelId: "gpt-5.4-pro", tier: "ultimate" },
-  { key: "gpt-5.4-mini", label: "GPT-5.4 Mini (OpenAI)", provider: "openai", providerModelId: "gpt-5.4-mini", tier: "ultimate" },
-  { key: "gpt-5.4-nano", label: "GPT-5.4 Nano (OpenAI)", provider: "openai", providerModelId: "gpt-5.4-nano", tier: "ultimate" },
-  { key: "gemini-2.5-pro", label: "Gemini 2.5 Pro (Google)", provider: "gemini", providerModelId: "gemini-2.5-pro", tier: "ultimate" },
-  { key: "gemini-2.5-flash", label: "Gemini 2.5 Flash (Google)", provider: "gemini", providerModelId: "gemini-2.5-flash", tier: "ultimate" },
-  { key: "gemini-2.5-flash-lite", label: "Gemini 2.5 Flash Lite (Google)", provider: "gemini", providerModelId: "gemini-2.5-flash-lite", tier: "ultimate" },
-  { key: "gemini-3.5-flash", label: "Gemini 3.5 Flash (Google)", provider: "gemini", providerModelId: "gemini-3.5-flash", tier: "ultimate" },
-  { key: "gemini-3.1-flash-lite", label: "Gemini 3.1 Flash Lite (Google)", provider: "gemini", providerModelId: "gemini-3.1-flash-lite", tier: "ultimate" },
-  { key: "gemini-3.1-flash-live-preview", label: "Gemini 3.1 Flash Live Preview (Google)", provider: "gemini", providerModelId: "gemini-3.1-flash-live-preview", tier: "ultimate" },
-  { key: "gemini-live-2.5-flash-native-audio", label: "Gemini Live 2.5 Flash Native Audio (Google)", provider: "gemini", providerModelId: "gemini-live-2.5-flash-native-audio", tier: "ultimate" },
-  { key: "gemini-2.5-flash-tts", label: "Gemini 2.5 Flash TTS (Google)", provider: "gemini", providerModelId: "gemini-2.5-flash-tts", tier: "ultimate" },
-  { key: "gemini-2.5-pro-tts", label: "Gemini 2.5 Pro TTS (Google)", provider: "gemini", providerModelId: "gemini-2.5-pro-tts", tier: "ultimate" },
-  { key: "gpt-4o", label: "GPT-4o (OpenAI / ChatGPT)", provider: "openai", providerModelId: "gpt-4o", tier: "ultimate" },
-  { key: "claude-3.5-sonnet", label: "Claude 3.5 Sonnet (Anthropic)", provider: "anthropic", providerModelId: "claude-3-5-sonnet-latest", tier: "ultimate" },
-  { key: "perplexity-sonar", label: "Sonar Large (Perplexity)", provider: "perplexity", providerModelId: "sonar", tier: "ultimate" },
-  { key: "deepseek-r1", label: "DeepSeek R1 (DeepSeek)", provider: "deepseek", providerModelId: "deepseek-reasoner", tier: "ultimate" },
-  { key: "custom-cloud-gpu", label: "Custom Cloud GPU Model", provider: "mock", providerModelId: "custom-cloud-gpu", tier: "ultimate" },
-  { key: "my-local-model", label: "My Local Model", provider: "mock", providerModelId: "my-local-model", tier: "ultimate" },
-];
+// Static list of Ultimate Models (now loaded dynamically from MODELS_REGISTRY)
+const ultimateModels = [];
 
 const modeRailX = { text: '0%', visual: '100%', codeinc: '200%', nexstudy: '300%' };
 const modeColorVar = {
@@ -152,6 +126,7 @@ export default function DashboardClient({ initialProfile }) {
   const [sessionModels, setSessionModels] = useState({}); // { [sessionId]: modelKey }
   const [isModelModalOpen, setIsModelModalOpen] = useState(false);
   const [shakingCardId, setShakingCardId] = useState(null);
+  const [providerSelectionData, setProviderSelectionData] = useState(null);
   
   // Sidebar states
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
@@ -184,6 +159,7 @@ export default function DashboardClient({ initialProfile }) {
   
   // Visual Workspace states
   const [visualType, setVisualType] = useState("image"); // 'image', 'video'
+  const [visualModel, setVisualModel] = useState("flux-schnell");
   const [visualPrompt, setVisualPrompt] = useState("Isometric 3D node cube, charcoal background, signal-green glow, studio lighting");
   const [visualStyle, setVisualStyle] = useState("Photoreal");
   const [visualAspect, setVisualAspect] = useState("1:1");
@@ -1001,8 +977,15 @@ export default function DashboardClient({ initialProfile }) {
   // Helper: Get active model per session (dynamic defaulting to section-appropriate model)
   const getActiveModel = () => {
     if (activeSession) {
-      const modelKey = sessionModels[activeSession.id];
+      let modelKey = sessionModels[activeSession.id];
       if (modelKey) {
+        // Map legacy keys to their new equivalent
+        if (modelKey === "groq-llama-3.3-70b-versatile") modelKey = "llama-3.3-70b-instruct-groq";
+        else if (modelKey === "gemini-2.5-pro") modelKey = "gemini-3.1-pro-google";
+        else if (modelKey === "gemini-2.5-flash") modelKey = "gemini-3.1-flash-google";
+        else if (modelKey === "gpt-oss-120b") modelKey = "gpt-oss-120b-cerebras";
+        else if (modelKey === "zai-glm-4.7") modelKey = "glm-4.7-zai";
+
         const match = combinedModels.find((m) => m.key === modelKey);
         if (match) {
           return {
@@ -1020,7 +1003,7 @@ export default function DashboardClient({ initialProfile }) {
       };
     }
 
-    const firstModel = combinedModels.find(m => m.key.includes("gpt-5") || m.key.includes("gemini-3.5-flash")) || combinedModels[0] || { key: "loading", label: "Loading models...", tier: "free" };
+    const firstModel = combinedModels.find(m => m.key.includes("gpt-oss-120b") || m.key.includes("gemini-3.1-pro")) || combinedModels[0] || { key: "loading", label: "Loading models...", tier: "free" };
     return {
       ...firstModel,
       vision: firstModel.providerModelId ? isVisionCapable(firstModel.providerModelId) : false
@@ -1115,7 +1098,7 @@ export default function DashboardClient({ initialProfile }) {
       const dbTitle = section === "image" ? "🖼️ New image chat" : section === "video" ? "🎬 New video chat" : section === "premium" ? "💎 New premium chat" : section === "code" ? "💻 New code chat" : section === "research" ? "🔍 New research chat" : section === "private" || section === "learning" ? "🔒 New private chat" : "New chat";
       const newSession = await createChatSession(supabase, profile.id, dbSection, dbTitle);
       
-      const currentModelKey = activeModel?.key || "groq-llama-3.3-70b-versatile";
+      const currentModelKey = activeModel?.key || "llama-3.3-70b-instruct-groq";
       setSessionModels((prev) => ({
         ...prev,
         [newSession.id]: currentModelKey
@@ -1440,12 +1423,29 @@ export default function DashboardClient({ initialProfile }) {
     }
   };
 
+  // Helper to extract base name for a model
+  const getBaseModelName = (m) => {
+    if (!m) return "";
+    if (m.name) return m.name;
+    const label = m.label || "";
+    return label.replace(/\s*\([^)]*\)/g, "").trim();
+  };
+
   // Operations: Model selection modal handler
   const handleSelectModel = (model) => {
     if (model.tier === "ultimate" && profile.plan !== "ultimate") {
       setShakingCardId(model.key);
       setTimeout(() => setShakingCardId(null), 400);
       showToast("Upgrade to Ultimate to unlock premium models.");
+      return;
+    }
+
+    // Find all variants sharing the same base model name
+    const baseName = getBaseModelName(model);
+    const variants = combinedModels.filter(m => getBaseModelName(m) === baseName);
+
+    if (variants.length > 1 && !providerSelectionData) {
+      setProviderSelectionData({ baseName, variants });
       return;
     }
 
@@ -1457,6 +1457,8 @@ export default function DashboardClient({ initialProfile }) {
     } else {
       setActiveModelOverride(model);
     }
+    
+    setProviderSelectionData(null);
     
     // Close modal with a slight delay for aesthetics
     setTimeout(() => {
@@ -2375,11 +2377,21 @@ export default function DashboardClient({ initialProfile }) {
       const count = visualType === "image" ? 4 : 2;
       const newTiles = [];
       for (let i = 0; i < count; i++) {
+        const seed = Math.floor(Math.random() * 1000000);
+        let modelParam = "flux";
+        if (visualModel === "flux-schnell") modelParam = "flux-schnell";
+        else if (visualModel === "stable-diffusion-3.5-large") modelParam = "stable-diffusion-3.5";
+
+        const promptWithStyle = `${visualPrompt}, ${visualStyle} style, aspect ratio ${visualAspect}`;
+        const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(promptWithStyle)}?width=1024&height=1024&nologo=true&seed=${seed}&model=${modelParam}`;
+
         newTiles.push({
           id: Date.now() + i,
           style: visualStyle,
           aspect: visualAspect,
-          isVideo: visualType === "video"
+          isVideo: visualType === "video",
+          url: imageUrl,
+          model: visualModel
         });
       }
       setVisualTiles(newTiles);
@@ -2390,7 +2402,8 @@ export default function DashboardClient({ initialProfile }) {
         style: visualStyle,
         aspect: visualAspect,
         isVideo: visualType === "video",
-        thumbClass: visualType === "video" ? "vhist-thumb-2" : "vhist-thumb-1"
+        thumbClass: visualType === "video" ? "vhist-thumb-2" : "vhist-thumb-1",
+        tiles: newTiles
       };
       setVisualHistory((prev) => [newHistoryItem, ...prev]);
     }, visualType === "image" ? 1300 : 2200);
@@ -2633,46 +2646,51 @@ export default function DashboardClient({ initialProfile }) {
     );
   };
 
-  // Group and sort models by provider for easier browsing
-  const groupedModels = {};
-  combinedModels.forEach((m) => {
-    const prov = (m.provider || "other").toLowerCase();
-    if (!groupedModels[prov]) {
-      groupedModels[prov] = [];
-    }
-    groupedModels[prov].push(m);
-  });
-
-  const providerNames = {
-    gemini: "Google Gemini",
-    openai: "OpenAI",
-    anthropic: "Anthropic Claude",
-    deepseek: "DeepSeek",
-    mistral: "Mistral AI",
-    groq: "Meta Llama (Groq)",
-    nvidia: "NVIDIA Nemotron",
-    perplexity: "Perplexity AI",
-    openrouter: "OpenRouter",
-    mock: "Custom & Local"
+  // Group and sort unique base models by level (Ultra, High, Medium, Low)
+  const getModelLevel = (m) => {
+    return m.category || "medium";
   };
 
-  const providerOrder = [
-    "gemini",
-    "openai",
-    "anthropic",
-    "deepseek",
-    "mistral",
-    "groq",
-    "perplexity",
-    "nvidia",
-    "openrouter",
-    "mock",
-    "other"
-  ];
+  const baseModelVariants = {};
+  combinedModels.forEach((m) => {
+    const baseName = getBaseModelName(m);
+    if (!baseModelVariants[baseName]) {
+      baseModelVariants[baseName] = [];
+    }
+    baseModelVariants[baseName].push(m);
+  });
+
+  const uniqueBaseModels = [];
+  const seenBaseNames = new Set();
+  combinedModels.forEach((m) => {
+    const baseName = getBaseModelName(m);
+    if (!seenBaseNames.has(baseName)) {
+      seenBaseNames.add(baseName);
+      uniqueBaseModels.push(m);
+    }
+  });
+
+  const groupedModels = {};
+  uniqueBaseModels.forEach((m) => {
+    const lvl = getModelLevel(m);
+    if (!groupedModels[lvl]) {
+      groupedModels[lvl] = [];
+    }
+    groupedModels[lvl].push(m);
+  });
+
+  const levelNames = {
+    ultra: "Ultra Intelligence (Frontier Capabilities)",
+    high: "High Capability (Production Specialists)",
+    medium: "Medium Level (Balanced & Fast)",
+    low: "Low Resource / Helper Models (Extremely Fast)"
+  };
+
+  const levelOrder = ["ultra", "high", "medium", "low"];
 
   const sortedProviderKeys = Object.keys(groupedModels).sort((a, b) => {
-    let indexA = providerOrder.indexOf(a);
-    let indexB = providerOrder.indexOf(b);
+    let indexA = levelOrder.indexOf(a);
+    let indexB = levelOrder.indexOf(b);
     if (indexA === -1) indexA = 999;
     if (indexB === -1) indexB = 999;
     return indexA - indexB;
@@ -2780,7 +2798,19 @@ export default function DashboardClient({ initialProfile }) {
           <div className="topbar-right">
             <button onClick={() => setIsModelModalOpen(true)} className="model-trigger">
               <div className="model-dot"></div>
-              <span id="modelLabel">{currentModel?.label || "Gemini 2.5 Pro"}</span>
+              <span id="modelLabel">
+                {mode === "visual"
+                  ? [
+                      { key: "flux-schnell", label: "FLUX.1-schnell" },
+                      { key: "flux-dev", label: "FLUX.1-dev" },
+                      { key: "flux-kontext-dev", label: "FLUX.1-Kontext-dev" },
+                      { key: "flux-2-klein-4b", label: "flux.2-klein-4b" },
+                      { key: "stable-diffusion-3.5-large", label: "stable-diffusion-3.5-large" },
+                      { key: "qwen-image", label: "qwen-image" },
+                      { key: "qwen-image-edit", label: "qwen-image-edit" }
+                    ].find(m => m.key === visualModel)?.label || "FLUX.1-schnell"
+                  : (currentModel?.label || "Gemini 3.1 Pro")}
+              </span>
               <svg className="expand" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                 <path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3" />
               </svg>
@@ -2983,7 +3013,7 @@ export default function DashboardClient({ initialProfile }) {
                       setVisualStyle(item.style);
                       setVisualAspect(item.aspect);
                       setVisualType(item.isVideo ? "video" : "image");
-                      setVisualTiles([
+                      setVisualTiles(item.tiles || [
                         { id: 101, style: item.style, aspect: item.aspect, isVideo: item.isVideo }
                       ]);
                     }}
@@ -4464,6 +4494,28 @@ export default function DashboardClient({ initialProfile }) {
                       </button>
                     ))}
                   </div>
+                  <div className="vopt-group" style={{ display: "flex", flexWrap: "wrap", gap: "6px", alignItems: "center" }}>
+                    <span className="vopt-label">Model</span>
+                    {[
+                      { key: "flux-schnell", label: "FLUX.1-schnell" },
+                      { key: "flux-dev", label: "FLUX.1-dev" },
+                      { key: "flux-kontext-dev", label: "FLUX.1-Kontext-dev" },
+                      { key: "flux-2-klein-4b", label: "flux.2-klein-4b" },
+                      { key: "stable-diffusion-3.5-large", label: "stable-diffusion-3.5-large" },
+                      { key: "qwen-image", label: "qwen-image" },
+                      { key: "qwen-image-edit", label: "qwen-image-edit" }
+                    ].map((m) => (
+                      <button
+                        key={m.key}
+                        type="button"
+                        onClick={() => setVisualModel(m.key)}
+                        className={`vopt-chip ${visualModel === m.key ? "active" : ""}`}
+                        style={{ fontSize: "11px", padding: "4px 8px" }}
+                      >
+                        {m.label}
+                      </button>
+                    ))}
+                  </div>
                   <div className="vopt-group" id="aspectGroup">
                     <span className="vopt-label">Aspect</span>
                     {["1:1", "16:9", "9:16"].map((aspect) => (
@@ -4507,9 +4559,55 @@ export default function DashboardClient({ initialProfile }) {
                       <div
                         key={tile.id}
                         className={`visual-tile ${tile.aspect === "16:9" ? "wide" : tile.aspect === "9:16" ? "tall" : ""}`}
+                        style={{
+                          position: "relative",
+                          overflow: "hidden",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          background: "var(--panel-2)",
+                          border: "1px solid var(--border)",
+                          borderRadius: "8px",
+                          boxShadow: "0 4px 20px rgba(0, 0, 0, 0.15)"
+                        }}
                       >
-                        <div className="visual-tile-label">
-                          {tile.style} · {tile.aspect} {tile.isVideo && "· Video"}
+                        {tile.isVideo ? (
+                          <video 
+                            src="https://assets.mixkit.co/videos/preview/mixkit-abstract-laser-lights-background-loop-41851-large.mp4"
+                            autoPlay 
+                            loop 
+                            muted 
+                            playsInline
+                            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                          />
+                        ) : (
+                          <img 
+                            src={tile.url || "https://image.pollinations.ai/prompt/Isometric%20cube?width=512&height=512"}
+                            alt={tile.style}
+                            loading="lazy"
+                            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                            onError={(e) => {
+                              e.target.src = "https://image.pollinations.ai/prompt/Isometric%20cube?width=512&height=512";
+                            }}
+                          />
+                        )}
+                        <div 
+                          className="visual-tile-label"
+                          style={{
+                            position: "absolute",
+                            bottom: "8px",
+                            left: "8px",
+                            background: "rgba(0, 0, 0, 0.7)",
+                            backdropFilter: "blur(4px)",
+                            padding: "4px 8px",
+                            borderRadius: "4px",
+                            fontSize: "11px",
+                            color: "white",
+                            border: "1px solid rgba(255, 255, 255, 0.1)",
+                            pointerEvents: "none"
+                          }}
+                        >
+                          {tile.model || "FLUX.1"} · {tile.style} · {tile.aspect} {tile.isVideo && "· Video"}
                         </div>
                       </div>
                     ))
@@ -4541,7 +4639,7 @@ export default function DashboardClient({ initialProfile }) {
                         setVisualStyle(item.style);
                         setVisualAspect(item.aspect);
                         setVisualType(item.isVideo ? "video" : "image");
-                        setVisualTiles([
+                        setVisualTiles(item.tiles || [
                           { id: item.id + 10, style: item.style, aspect: item.aspect, isVideo: item.isVideo }
                         ]);
                       }}
@@ -4569,7 +4667,7 @@ export default function DashboardClient({ initialProfile }) {
         <div className="modal-backdrop show" id="modelBackdrop">
           <div className="model-modal">
             <div className="mm-head">
-              <button onClick={() => setIsModelModalOpen(false)} className="mm-close" id="closeModelModal">
+              <button onClick={() => { setIsModelModalOpen(false); setProviderSelectionData(null); }} className="mm-close" id="closeModelModal">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <line x1="18" y1="6" x2="6" y2="18" />
                   <line x1="6" y1="6" x2="18" y2="18" />
@@ -4580,52 +4678,387 @@ export default function DashboardClient({ initialProfile }) {
             </div>
             
             <div className="mm-body">
-              {sortedProviderKeys.map((prov) => {
-                const provModels = groupedModels[prov];
-                const providerLabel = providerNames[prov] || (prov.charAt(0).toUpperCase() + prov.slice(1));
-                return (
-                  <div key={prov} className="provider-section">
-                    <div className="provider-title">{providerLabel}</div>
-                    <div className="mm-grid">
-                      {provModels.map((m) => {
-                        const isSelected = currentModel?.key === m.key;
-                        const isLocked = m.tier === "ultimate" && profile.plan !== "ultimate";
-                        const isShaking = shakingCardId === m.key;
-                        const { icon, colorClass, desc, tags } = getModelTagsAndDesc(m);
+              {mode === "visual" ? (
+                <div className="provider-section" style={{ width: "100%" }}>
+                  <div className="provider-title">NVIDIA Image Creation Models</div>
+                  <div className="mm-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: "16px", padding: "10px 0" }}>
+                    {[
+                      { key: "flux-schnell", name: "FLUX.1-schnell", desc: "Ultra-fast open-weights image generator.", tags: ["Image Gen", "Fast"] },
+                      { key: "flux-dev", name: "FLUX.1-dev", desc: "High-quality open-weights developer generator.", tags: ["Image Gen", "Quality"] },
+                      { key: "flux-kontext-dev", name: "FLUX.1-Kontext-dev", desc: "Multimodal contextual generation and editing.", tags: ["Image Gen", "Context"] },
+                      { key: "flux-2-klein-4b", name: "flux.2-klein-4b", desc: "Distilled lighting speed generator and editor.", tags: ["Image Gen", "Speed"] },
+                      { key: "stable-diffusion-3.5-large", name: "stable-diffusion-3.5-large", desc: "Highly versatile generator with excellent details.", tags: ["Image Gen", "Versatile"] },
+                      { key: "qwen-image", name: "qwen-image", desc: "Qwen text-to-image foundation model.", tags: ["Image Gen", "Multilingual"] },
+                      { key: "qwen-image-edit", name: "qwen-image-edit", desc: "Strong subject-preserved image editor.", tags: ["Image Gen", "Edit"] }
+                    ].map((m) => {
+                      const isSelected = visualModel === m.key;
+                      return (
+                        <div
+                          key={m.key}
+                          onClick={() => {
+                            setVisualModel(m.key);
+                            setIsModelModalOpen(false);
+                          }}
+                          className={`model-card mc-nvidia ${isSelected ? "selected" : ""}`}
+                          style={{
+                            background: "var(--panel-2)",
+                            border: isSelected ? "1.5px solid var(--signal)" : "1px solid var(--border)",
+                            padding: "16px",
+                            borderRadius: "6px",
+                            cursor: "pointer",
+                            position: "relative",
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: "8px",
+                            transition: "all 0.2s"
+                          }}
+                        >
+                          {isSelected && (
+                            <div className="mc-check" style={{ position: "absolute", top: "12px", right: "12px", color: "var(--signal)" }}>
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                                <polyline points="20 6 9 17 4 12" />
+                              </svg>
+                            </div>
+                          )}
+                          <div className="mc-top" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                            <div className="mc-icon" style={{ fontSize: "18px" }}>🎨</div>
+                            <span className="mc-badge live" style={{ background: "rgba(118, 185, 0, 0.15)", color: "#76B900", fontSize: "10px", padding: "2px 6px", borderRadius: "4px", fontWeight: "bold" }}>NVIDIA</span>
+                          </div>
+                          <div className="mc-name" style={{ fontWeight: "bold", fontSize: "14.5px", color: "var(--text)" }}>{m.name}</div>
+                          <div className="mc-desc" style={{ fontSize: "12px", color: "var(--text-dim)", minHeight: "36px" }}>{m.desc}</div>
+                          <div className="mc-tags" style={{ display: "flex", gap: "6px", marginTop: "auto" }}>
+                            {m.tags.map((tag) => (
+                              <span key={tag} className="mc-tag" style={{ background: "var(--panel-3)", border: "1px solid var(--border)", fontSize: "10.5px", padding: "2px 6px", borderRadius: "4px", color: "var(--text-dim)" }}>{tag}</span>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : providerSelectionData ? (
+                <div className="provider-select-view" style={{ padding: "8px 0" }}>
+                  <div className="psv-head" style={{ marginBottom: "22px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <button 
+                      onClick={() => setProviderSelectionData(null)}
+                      style={{
+                        background: "transparent",
+                        border: "none",
+                        color: "var(--text-dim)",
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        fontFamily: "var(--mono)",
+                        fontSize: "11.5px",
+                        padding: "5px 10px",
+                        borderRadius: "4px",
+                        backgroundColor: "var(--panel-2)",
+                        border: "1px solid var(--border)",
+                        transition: "all 0.2s"
+                      }}
+                      className="hover:text-white"
+                    >
+                      ← Back to all models
+                    </button>
+                    <span style={{ fontSize: "11px", color: "var(--text-dim)", fontFamily: "var(--mono)", opacity: 0.7 }}>
+                      {providerSelectionData.variants.length} Providers available
+                    </span>
+                  </div>
+
+                  <div style={{ marginBottom: "20px" }}>
+                    <h3 style={{ fontSize: "17.5px", fontFamily: "var(--sans)", color: "var(--text)", fontWeight: "bold", margin: "0 0 4px 0" }}>
+                      Select Provider for {providerSelectionData.baseName}
+                    </h3>
+                    <p style={{ fontSize: "12px", color: "var(--text-dim)", margin: 0 }}>
+                      Choose your preferred routing path. Each provider has different latency and speed metrics.
+                    </p>
+                  </div>
+
+                  <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                    {(() => {
+                      const getProviderPerformanceInfo = (v) => {
+                        const prov = v.provider.toLowerCase();
+                        let speed = "Normal";
+                        let latency = "Medium";
+                        let desc = "Standard API completion.";
+                        let badgeColor = "var(--text-dim)";
+                        
+                        if (prov === "cerebras") {
+                          speed = "⚡ ~2000 t/s";
+                          latency = "Ultra-Low (<0.1s)";
+                          desc = "Hardware-accelerated CS-3 direct engine.";
+                          badgeColor = "#A855F7";
+                        } else if (prov === "groq") {
+                          speed = "🚀 ~800 t/s";
+                          latency = "Very Low (~0.2s)";
+                          desc = "High-speed LPU inference engine.";
+                          badgeColor = "#FACC15";
+                        } else if (prov === "nvidia") {
+                          speed = "⚡ ~300 t/s";
+                          latency = "Low (~0.3s)";
+                          desc = "NVIDIA's direct API Catalog endpoint.";
+                          badgeColor = "#76B900";
+                        } else if (prov === "gemini") {
+                          speed = "🔥 Balanced";
+                          latency = "Low (~0.4s)";
+                          desc = "Direct Google AI Studio endpoint.";
+                          badgeColor = "#1A73E8";
+                        } else if (prov === "mistral") {
+                          speed = "🔥 Balanced";
+                          latency = "Low (~0.4s)";
+                          desc = "Mistral AI platform native endpoint.";
+                          badgeColor = "#FD5E53";
+                        } else if (prov === "zai") {
+                          speed = "⚡ Fast";
+                          latency = "Medium (~0.5s)";
+                          desc = "ZHIPU AI developer native platform.";
+                          badgeColor = "#3B82F6";
+                        } else if (prov === "openrouter") {
+                          speed = "🌐 Variable";
+                          latency = "Medium (~0.6s)";
+                          desc = "Unified API proxy routing.";
+                          badgeColor = "#EC4899";
+                        } else if (prov === "fireworks") {
+                          speed = "🚀 ~400 t/s";
+                          latency = "Low (~0.3s)";
+                          desc = "Fireworks AI high-throughput endpoint.";
+                          badgeColor = "#EA580C";
+                        }
+                        return { speed, latency, desc, badgeColor };
+                      };
+
+                      const getProviderIcon = (provider) => {
+                        const p = provider.toLowerCase();
+                        if (p === "gemini") {
+                          return (
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1A73E8" strokeWidth="2">
+                              <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+                            </svg>
+                          );
+                        }
+                        if (p === "groq") {
+                          return (
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FACC15" strokeWidth="2">
+                              <rect x="4" y="4" width="16" height="16" rx="2" />
+                              <path d="M9 9h6v6H9zM9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 15h3M1 9h3M1 15h3" />
+                            </svg>
+                          );
+                        }
+                        if (p === "nvidia") {
+                          return (
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#76B900" strokeWidth="2">
+                              <circle cx="12" cy="12" r="10" />
+                              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+                              <path d="M2 12h20" />
+                            </svg>
+                          );
+                        }
+                        if (p === "cerebras") {
+                          return (
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#A855F7" strokeWidth="2">
+                              <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+                            </svg>
+                          );
+                        }
+                        if (p === "fireworks") {
+                          return (
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#EA580C" strokeWidth="2">
+                              <circle cx="12" cy="12" r="2" />
+                              <path d="M12 2v4M12 18v4M4 12H2M22 12h-2M19 5l-3 3M8 16l-3 3M5 5l3 3M16 16l3 3" />
+                            </svg>
+                          );
+                        }
+                        if (p === "openrouter") {
+                          return (
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#EC4899" strokeWidth="2">
+                              <path d="M9 17H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-4" />
+                              <polyline points="12 13 17 18 12 23" />
+                              <path d="M17 18H12" />
+                            </svg>
+                          );
+                        }
+                        if (p === "mimo") {
+                          return (
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FF6700" strokeWidth="2">
+                              <rect x="5" y="2" width="14" height="20" rx="2" />
+                              <path d="M12 18h.01" />
+                            </svg>
+                          );
+                        }
+                        if (p === "sakana") {
+                          return (
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#00ADB5" strokeWidth="2">
+                              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7s0 6 8 10z" />
+                            </svg>
+                          );
+                        }
+                        if (p === "zai") {
+                          return (
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" strokeWidth="2">
+                              <circle cx="12" cy="12" r="10" />
+                              <path d="M8 12h8M12 8v8" />
+                            </svg>
+                          );
+                        }
+                        if (p === "mistral") {
+                          return (
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FD5E53" strokeWidth="2">
+                              <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2zM18 10a2 2 0 0 0-2-2h-3v4h3a2 2 0 0 0 2-2zM8 10a2 2 0 0 0-2-2h-3v4h3a2 2 0 0 0 2-2zM12 14v8M9 17h6" />
+                            </svg>
+                          );
+                        }
+                        return (
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" strokeWidth="2">
+                            <circle cx="12" cy="12" r="10" />
+                            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3M12 17h.01" />
+                          </svg>
+                        );
+                      };
+
+                      return providerSelectionData.variants.map((v) => {
+                        const isSelected = currentModel?.key === v.key;
+                        const providerLabel = v.provider === "openrouter" ? "OpenRouter" : (v.provider.charAt(0).toUpperCase() + v.provider.slice(1));
+                        const isLocked = v.tier === "ultimate" && profile.plan !== "ultimate";
+                        
+                        const perf = getProviderPerformanceInfo(v);
+                        const icon = getProviderIcon(v.provider);
+
+                        // Format mode label (e.g., Coding, Reasoning, Standard)
+                        let modeLabel = "Standard Run";
+                        if (v.key.includes("reasoning")) modeLabel = "Reasoning Mode";
+                        else if (v.key.includes("coding")) modeLabel = "Coding Specialist";
+                        else if (v.key.includes("trying")) modeLabel = "Alternative Run";
 
                         return (
                           <div
-                            key={m.key}
-                            onClick={() => handleSelectModel(m)}
-                            className={`model-card ${colorClass} ${isSelected ? "selected" : ""} ${isLocked ? "locked" : ""} ${isShaking ? "shake-sm" : ""}`}
+                            key={v.key}
+                            onClick={() => handleSelectModel(v)}
+                            style={{
+                              background: "var(--panel-2)",
+                              border: isSelected ? `1.5px solid ${perf.badgeColor}` : "1px solid var(--border)",
+                              borderLeft: `4px solid ${perf.badgeColor}`,
+                              padding: "14px 16px",
+                              borderRadius: "6px",
+                              cursor: "pointer",
+                              display: "flex",
+                              justifyContent: "space-between",
+                              alignItems: "center",
+                              transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)"
+                            }}
+                            className={`provider-option-card hover:bg-neutral-800/40 ${isLocked ? "locked" : ""}`}
                           >
-                            {isSelected && (
-                              <div className="mc-check">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                                  <polyline points="20 6 9 17 4 12" />
-                                </svg>
+                            <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+                              <div 
+                                style={{ 
+                                  background: `${perf.badgeColor}12`, 
+                                  padding: "9px", 
+                                  borderRadius: "6px", 
+                                  display: "flex", 
+                                  alignItems: "center", 
+                                  justifyContent: "center" 
+                                }}
+                              >
+                                {icon}
                               </div>
-                            )}
-                            <div className="mc-top">
-                              <div className="mc-icon">{icon}</div>
-                              <span className={`mc-badge ${isLocked ? "soon" : "live"}`}>
-                                {isLocked ? "Premium" : "Live"}
-                              </span>
+                              <div>
+                                <div style={{ fontWeight: "bold", fontSize: "14px", display: "flex", alignItems: "center", gap: "8px", color: "var(--text)" }}>
+                                  {v.name || providerLabel} <span style={{ fontSize: "11px", fontWeight: "normal", color: "var(--text-dim)", opacity: 0.8 }}>({modeLabel})</span>
+                                  {isLocked && <span className="mc-badge soon">Premium</span>}
+                                </div>
+                                <div style={{ fontSize: "11.5px", color: "var(--text-dim)", marginTop: "4px", display: "flex", flexWrap: "wrap", gap: "10px", alignItems: "center" }}>
+                                  <span style={{ color: "var(--text-dim)" }}>{perf.desc}</span>
+                                  <span style={{ display: "inline-block", width: "3px", height: "3px", borderRadius: "50%", background: "var(--border)" }}></span>
+                                  <span style={{ color: perf.badgeColor, fontWeight: "600", fontSize: "10.5px" }}>{perf.speed}</span>
+                                  <span style={{ display: "inline-block", width: "3px", height: "3px", borderRadius: "50%", background: "var(--border)" }}></span>
+                                  <span style={{ fontSize: "11px" }}>Latency: {perf.latency}</span>
+                                </div>
+                                <div style={{ fontSize: "10px", color: "var(--text-dim)", marginTop: "5px", fontFamily: "var(--mono)", opacity: 0.5 }}>
+                                  API: {v.providerModelId}
+                                </div>
+                              </div>
                             </div>
-                            <div className="mc-name">{m.label}</div>
-                            <div className="mc-desc">{desc}</div>
-                            <div className="mc-tags">
-                              {tags.map((tag) => (
-                                <span key={tag} className="mc-tag">{tag}</span>
-                              ))}
+                            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "4px" }}>
+                              <div 
+                                style={{ 
+                                  fontSize: "11px", 
+                                  color: isSelected ? "var(--signal)" : "var(--text-dim)", 
+                                  fontWeight: "bold",
+                                  backgroundColor: isSelected ? "rgba(94, 224, 168, 0.1)" : "transparent",
+                                  padding: isSelected ? "3px 8px" : "0",
+                                  borderRadius: "12px",
+                                  border: isSelected ? "1px solid rgba(94, 224, 168, 0.2)" : "none"
+                                }}
+                              >
+                                {isSelected ? "✓ Active" : "Select →"}
+                              </div>
+                              <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                                <span style={{ display: "inline-block", width: "5px", height: "5px", borderRadius: "50%", background: "#10B981" }}></span>
+                                <span style={{ fontSize: "9.5px", color: "var(--text-dim)", opacity: 0.7 }}>Online</span>
+                              </div>
                             </div>
                           </div>
                         );
-                      })}
-                    </div>
+                      });
+                    })()}
                   </div>
-                );
-              })}
+                </div>
+              ) : (
+                sortedProviderKeys.map((prov) => {
+                  const provModels = groupedModels[prov];
+                  const providerLabel = levelNames[prov] || (prov.charAt(0).toUpperCase() + prov.slice(1));
+                  return (
+                    <div key={prov} className="provider-section">
+                       <div className="provider-title">{providerLabel}</div>
+                       <div className="mm-grid">
+                         {provModels.map((m) => {
+                           const variants = baseModelVariants[getBaseModelName(m)] || [m];
+                           const isSelected = currentModel && getBaseModelName(currentModel) === getBaseModelName(m);
+                           const isLocked = m.tier === "ultimate" && profile.plan !== "ultimate";
+                           const isShaking = shakingCardId === m.key;
+                           const { icon, colorClass, desc, tags } = getModelTagsAndDesc(m);
+
+                           return (
+                             <div
+                               key={m.key}
+                               onClick={() => handleSelectModel(m)}
+                               className={`model-card ${colorClass} ${isSelected ? "selected" : ""} ${isLocked ? "locked" : ""} ${isShaking ? "shake-sm" : ""}`}
+                             >
+                               {isSelected && (
+                                 <div className="mc-check">
+                                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                                     <polyline points="20 6 9 17 4 12" />
+                                   </svg>
+                                 </div>
+                               )}
+                               <div className="mc-top">
+                                 <div className="mc-icon">{icon}</div>
+                                 <span className={`mc-badge ${isLocked ? "soon" : "live"}`}>
+                                   {isLocked ? "Premium" : "Live"}
+                                 </span>
+                               </div>
+                               <div className="mc-name">
+                                 {getBaseModelName(m)}
+                                 {variants.length > 1 && (
+                                   <span style={{ fontSize: "9px", display: "block", color: isSelected ? "var(--signal)" : "var(--text-dim)", fontWeight: "normal", marginTop: "4px" }}>
+                                     {isSelected ? `via ${currentModel.provider.toUpperCase()}` : `${variants.length} Providers`}
+                                   </span>
+                                 )}
+                               </div>
+                               <div className="mc-desc">{desc}</div>
+                               <div className="mc-tags">
+                                 {tags.map((tag) => (
+                                   <span key={tag} className="mc-tag">{tag}</span>
+                                 ))}
+                               </div>
+                             </div>
+                           );
+                         })}
+                       </div>
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
         </div>

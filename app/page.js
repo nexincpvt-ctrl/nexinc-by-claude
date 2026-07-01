@@ -633,11 +633,11 @@ export default function LandingPage() {
         <div className="models-grid reveal">
           {[
             {
-              key: "gpt-5.5",
-              provider: "OpenAI",
-              name: "GPT-5.5",
-              desc: "The latest flagship from OpenAI. Exceptional reasoning, coding, and multimodal understanding.",
-              tags: ["Vision", "Code", "128K ctx"],
+              key: "gpt-oss-120b",
+              provider: "Cerebras",
+              name: "GPT-OSS-120B",
+              desc: "Massive open-source model running on Cerebras wafer-scale engine for ultra-low latency.",
+              tags: ["Wafer speed", "Open-source", "128K ctx"],
             },
             {
               key: "gemini-2.5-pro",
@@ -647,11 +647,11 @@ export default function LandingPage() {
               tags: ["2M ctx", "Multimodal", "Grounding"],
             },
             {
-              key: "claude-3.5-sonnet",
-              provider: "Anthropic",
-              name: "Claude 3.5 Sonnet",
-              desc: "Thoughtful, nuanced, and safety-focused. Unmatched for complex analysis and writing.",
-              tags: ["Research", "Writing", "200K ctx"],
+              key: "mistral-large",
+              provider: "Mistral AI",
+              name: "Mistral Large",
+              desc: "Flagship model from Europe's leading AI lab, optimized for multilingual tasks and coding.",
+              tags: ["Multilingual", "Function call", "32K ctx"],
             },
             {
               key: "llama-3.3-70b-reasoning",
@@ -666,13 +666,6 @@ export default function LandingPage() {
               name: "Grok 3",
               desc: "Real-time web access baked in. Ideal for current events, research, and live data tasks.",
               tags: ["Web access", "Real-time", "STEM"],
-            },
-            {
-              key: "deepseek-r1",
-              provider: "DeepSeek",
-              name: "DeepSeek R1",
-              desc: "Chain-of-thought reasoning model with near-frontier performance at a fraction of the cost.",
-              tags: ["Reasoning", "Math", "Low cost"],
             },
           ].map((m, idx) => (
             <Link
@@ -855,14 +848,14 @@ export default function LandingPage() {
               <br />
               <div>
                 <span className="t-prompt">$ </span>
-                <span className="t-cmd">nexinc run --model gpt-5.5</span>
+                <span className="t-cmd">nexinc run --model gpt-oss-120b</span>
               </div>
               <div className="t-out">
                 Spinning up runtime...{" "}
                 <span style={{ color: "var(--teal)" }}>done</span>
               </div>
               <div className="t-out">
-                Model mesh: <span className="t-key">GPT-5.5</span> →{" "}
+                Model mesh: <span className="t-key">GPT-OSS-120B</span> →{" "}
                 <span className="t-val">US-EAST-1A</span>
               </div>
               <br />
